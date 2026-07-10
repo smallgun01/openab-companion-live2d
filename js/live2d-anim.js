@@ -10,7 +10,7 @@
  * Post-MVP: add playMotion(motionPath) for keyframed clips.
  */
 
-import { setParameter, getParameter, hasParameters } from './live2d-scene.js';
+import { setParameter, hasParameters } from './live2d-scene.js';
 
 // ── Configuration ──────────────────────────────────────
 // ⚠️ Angle parameters (ParamAngleX, ParamBodyAngleX) use degree-scale values
@@ -33,8 +33,10 @@ let idleActive = false;
 
 // Blink state machine
 let blinkTimer = null;
-let blinkPhase = 'idle'; // idle | closing | paused | opening
+let blinkPhase = 'idle'; // idle | closing | opening
 let blinkStartTime = 0;
+let blinkPreEyeL = 1;
+let blinkPreEyeR = 1;
 
 // ── Public API ─────────────────────────────────────────
 
@@ -166,6 +168,9 @@ function scheduleNextBlink() {
   blinkTimer = setTimeout(() => {
     blinkTimer = null;
     if (!idleActive) return;
+    // Capture current eye values before blink (preserve emotion)
+    blinkPreEyeL = 1;  // default; will be set below if model available
+    blinkPreEyeR = 1;
     blinkPhase = 'closing';
     blinkStartTime = performance.now();
   }, delay);

@@ -21,8 +21,6 @@
 import {
   CubismFramework,
   CubismUserModel,
-  CubismMoc,
-  CubismModelMatrix,
   CubismMatrix44,
 } from '../lib/CubismFramework/live2dcubismframework.js';
 
@@ -46,7 +44,7 @@ let bgColor = [0.102, 0.102, 0.180, 1.0]; // #1a1a2e
 /** @type {number} — render loop animation frame id */
 let animationFrameId = null;
 
-/** @type {WebGLFramebuffer|null} — Cubism render target */
+/** @type {WebGLFramebuffer|null} — unused; kept for future render-target support */
 let renderFramebuffer = null;
 
 /** @type {WebGLTexture|null} */
@@ -54,9 +52,6 @@ let renderTexture = null;
 
 /** @type {number} — canvas pixel ratio */
 let devicePixelRatio = 1;
-
-/** @type {boolean} — first frame flag for viewport setup */
-let firstDraw = true;
 
 /** @type {boolean} — framework initialized */
 let frameworkReady = false;
@@ -167,48 +162,45 @@ export async function loadModel(modelDir) {
 
   // ── Create model from MOC ──
   try {
-    // NOTE: The exact CubismUserModel API depends on SDK version.
-    // Cubism 5 uses: userModel = new CubismUserModel(); userModel.loadModel(mocBuffer);
-    // Adjust after SDK setup if needed.
-
     userModel = new CubismUserModel();
+    userModel.loadModel(mocBuffer);  // handles Moc creation, param save, model matrix
 
-    // Load MOC binary
-    const moc = CubismMoc.create(mocBuffer);
-    if (!moc) throw new Error('CubismMoc.create returned null');
+    // Create renderer with canvas dimensions
+    const cw = Math.floor(canvas.width / devicePixelRatio);
+    const ch = Math.floor(canvas.height / devicePixelRatio);
+    userModel.createRenderer(cw, ch);
 
-    userModel.setMoc?.(moc);
-    userModel.setupRenderer?.();
-    userModel.setupTextures?.();
-    userModel.loadParameters?.();
-
-    console.log('[live2d-scene] Model created from MOC');
+    console.log('[live2d-scene] Model loaded from MOC');
   } catch (err) {
     console.error('[live2d-scene] Model creation failed:', err.message);
     return false;
   }
 
   // ── Load textures ──
-  const textureCount = settingJson.FileReferences?.Textures?.length || 0;
-  for (let i = 0; i < textureCount; i++) {
-    const texPath = settingJson.FileReferences.Textures[i];
+  const texturePaths = settingJson.FileReferences?.Textures || [];
+  for (let i = 0; i < texturePaths.length; i++) {
+    const texPath = texturePaths[i];
     try {
       const img = await loadImage(dir + texPath);
-      createTexture(i, img);
+      const tex = createGLTexture(img);
+      // Register texture with Cubism renderer
+      const renderer = userModel.getRenderer?.();
+      if (renderer) {
+        try { renderer.bindTexture?.(i, tex); } catch { /* ignore */ }
+      }
     } catch (err) {
       console.warn(`[live2d-scene] Texture ${i} (${texPath}) failed:`, err.message);
     }
   }
 
   // ── Setup model matrix ──
-  if (userModel.getModelMatrix) {
-    const matrix = userModel.getModelMatrix();
-    if (matrix) {
-      // Center the model on canvas
-      const modelWidth = settingJson.FileReferences?.CanvasWidth || settingJson.FileReferences?.width || 1000;
-      const modelHeight = settingJson.FileReferences?.CanvasHeight || settingJson.FileReferences?.height || 1000;
-      setupLayout(matrix, modelWidth, modelHeight);
-    }
+  const matrix = userModel.getModelMatrix?.();
+  if (matrix) {
+    const modelW = userModel.getModel?.()?.getCanvasWidth?.() ||
+      settingJson.FileReferences?.CanvasWidth || 1000;
+    const modelH = userModel.getModel?.()?.getCanvasHeight?.() ||
+      settingJson.FileReferences?.CanvasHeight || 1000;
+    setupLayout(matrix, modelW, modelH);
   }
 
   console.log('[live2d-scene] Model loaded:', modelDir);
@@ -317,7 +309,8 @@ function tick(now) {
   if (userModel && frameworkReady) {
     try {
       userModel.update?.();
-      userModel.draw?.(CubismMatrix44.identity?.() || new CubismMatrix44());
+      const projection = new CubismMatrix44();
+      userModel.draw?.(projection);
     } catch (err) {
       // Silently skip frame on draw error
     }
@@ -347,7 +340,7 @@ function loadImage(url) {
   });
 }
 
-function createTexture(index, image) {
+function createGLTexture(image) {
   if (!gl) return null;
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -357,14 +350,6 @@ function createTexture(index, image) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   gl.bindTexture(gl.TEXTURE_2D, null);
-
-  // Register with model
-  if (userModel?.getRenderer?.()) {
-    try {
-      userModel.getRenderer().bindTexture?.(index, tex);
-    } catch { /* ignore */ }
-  }
-
   return tex;
 }
 
