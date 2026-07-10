@@ -1,0 +1,4 @@
+# Cubism SDK Framework — locally compiled JS
+
+* Core JS + WASM (live2dcubismcore.js / .wasm)
+* Framework ES modules (compiled from TypeScript)

@@ -1,0 +1,18 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+
+# Cubism SDK — see lib/README.md for setup
+lib/CubismSdkForWeb-*/
+lib/CubismWebFramework/
+
+# User models
+models/*/
+!models/.gitkeep
+
+# Dev artifacts
+node_modules/
