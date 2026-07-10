@@ -228,7 +228,9 @@ export function setParameter(name, value) {
   const model = userModel.getModel?.();
   if (!model) return;
 
-  const clamped = Math.max(0, Math.min(1, value));
+  // Angle params (ParamAngleX/Y/Z, ParamBodyAngleX/Y/Z) use degree-scale
+  // values (~ -30..30), NOT 0-1. Only clamp params known to be 0-1 range.
+  const clamped = Math.max(-100, Math.min(100, value));  // safety clamp only
   try {
     model.setParameterValueById(name, clamped);
   } catch {

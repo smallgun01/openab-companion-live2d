@@ -22,172 +22,125 @@ import { setParameter, getParameter, hasParameters } from './live2d-scene.js';
 
 // ── Emotion → Cubism parameter target values ────────────
 
+// ⚠️ Angle parameters (ParamAngleX/Y/Z, ParamBodyAngleX/Y/Z) use degree-scale
+// values (≈ -30..30), NOT 0-1. Do NOT clamp these in setParameter.
 export const EMOTION_MAP = {
   // ── Primitives ──
   happy: {
     ParamEyeLSmile: 1.0,
     ParamEyeRSmile: 1.0,
-    ParamEyeLOpen: 0.7,       // slight happy squint
-    ParamEyeROpen: 0.7,
-    ParamMouthForm: 0.8,      // smile
-    ParamMouthOpenY: 0.15,
-    ParamBrowLY: 0.3,
-    ParamBrowRY: 0.3,
-    ParamCheek: 0.5,          // blush
+    ParamMouthForm: 0.8,
+    ParamCheek: 0.5,
   },
   sad: {
-    ParamBrowLY: -0.6,        // brows down
-    ParamBrowRY: -0.6,
-    ParamBrowLForm: -0.3,
-    ParamBrowRForm: -0.3,
-    ParamEyeLOpen: 0.45,
-    ParamEyeROpen: 0.45,
-    ParamMouthForm: -0.6,     // slight frown
-    ParamMouthOpenY: 0.0,
-    ParamCheek: 0.1,
+    ParamBrowLAngle: -0.3,
+    ParamBrowRAngle: -0.3,
+    ParamEyeLOpen: 0.6,
+    ParamEyeROpen: 0.6,
+    ParamMouthForm: -0.7,
   },
   angry: {
-    ParamBrowLY: -0.9,
-    ParamBrowRY: -0.9,
-    ParamBrowLAngle: -0.5,
-    ParamBrowRAngle: 0.5,     // angled brows (V-shape)
-    ParamBrowLForm: -0.5,
-    ParamBrowRForm: -0.5,
+    ParamBrowLAngle: -1.0,
+    ParamBrowRAngle: -1.0,
+    ParamBrowLY: -0.3,
+    ParamBrowRY: -0.3,
     ParamEyeLOpen: 0.8,
     ParamEyeROpen: 0.8,
-    ParamMouthForm: -0.3,
-    ParamMouthOpenY: 0.1,
-    ParamCheek: 0.0,
+    ParamMouthForm: -0.5,
+    ParamMouthOpenY: 0.3,
   },
   surprised: {
-    ParamEyeLOpen: 1.0,       // wide eyes
-    ParamEyeROpen: 1.0,
-    ParamEyeLSmile: 0.0,
-    ParamEyeRSmile: 0.0,
-    ParamBrowLY: 0.8,         // brows high
+    ParamEyeLOpen: 1.2,        // extra wide (model supports >1.0)
+    ParamEyeROpen: 1.2,
+    ParamBrowLY: 0.8,
     ParamBrowRY: 0.8,
-    ParamMouthOpenY: 0.5,     // mouth open
-    ParamMouthForm: 0.1,
-    ParamCheek: 0.2,
+    ParamMouthOpenY: 0.7,
+    ParamMouthForm: 0.0,
   },
   relaxed: {
-    ParamEyeLOpen: 0.6,       // half-closed, relaxed
-    ParamEyeROpen: 0.6,
-    ParamMouthForm: 0.15,     // gentle smile
-    ParamMouthOpenY: 0.0,
-    ParamBrowLY: 0.0,
-    ParamBrowRY: 0.0,
-    ParamBrowLAngle: 0.0,
-    ParamBrowRAngle: 0.0,
+    ParamEyeLOpen: 0.7,
+    ParamEyeROpen: 0.7,
+    ParamEyeLSmile: 0.4,
+    ParamEyeRSmile: 0.4,
+    ParamMouthForm: 0.3,
   },
-  neutral: {
-    // Reset all touched emotion params to default
-    ParamEyeLOpen: 1.0,
-    ParamEyeROpen: 1.0,
-    ParamEyeLSmile: 0.0,
-    ParamEyeRSmile: 0.0,
-    ParamMouthForm: 0.0,
-    ParamMouthOpenY: 0.0,
-    ParamBrowLY: 0.0,
-    ParamBrowRY: 0.0,
-    ParamBrowLX: 0.0,
-    ParamBrowRX: 0.0,
-    ParamBrowLAngle: 0.0,
-    ParamBrowRAngle: 0.0,
-    ParamBrowLForm: 0.0,
-    ParamBrowRForm: 0.0,
-    ParamCheek: 0.0,
-    ParamEyeBallX: 0.0,
-    ParamEyeBallY: 0.0,
-  },
+  neutral: {},  // idle takes over — no parameter overrides
 
   // ── Compounds ──
   thinking: {
-    ParamEyeLOpen: 0.7,
-    ParamEyeROpen: 0.7,
-    ParamEyeBallX: 0.4,       // look to side
-    ParamEyeBallY: 0.2,       // look up slightly
-    ParamMouthForm: 0.05,
-    ParamMouthOpenY: 0.05,
-    ParamBrowLY: 0.15,
-    ParamBrowRY: 0.15,
-    ParamBrowLAngle: -0.1,
-    ParamBrowRAngle: -0.1,
+    ParamAngleX: 5.0,          // head tilt (degrees)
+    ParamEyeBallY: 0.5,        // looking up
+    ParamBrowLY: 0.3,
+    ParamBrowRY: 0.3,
   },
   confused: {
-    ParamBrowLY: -0.2,
-    ParamBrowRY: 0.3,         // uneven brows
-    ParamBrowLAngle: -0.3,
-    ParamBrowRAngle: 0.3,
-    ParamEyeLOpen: 0.75,
-    ParamEyeROpen: 0.75,
-    ParamMouthForm: -0.15,
-    ParamMouthOpenY: 0.05,
-    ParamEyeBallX: -0.3,
-    ParamEyeBallY: 0.1,
+    ParamBrowLAngle: 0.5,      // one brow up, one down
+    ParamBrowRAngle: -0.5,
+    ParamAngleZ: -3.0,         // head tilt
+    ParamMouthForm: -0.3,
   },
   excited: {
-    ParamEyeLOpen: 1.0,
-    ParamEyeROpen: 1.0,
-    ParamEyeLSmile: 0.8,
-    ParamEyeRSmile: 0.8,
+    ParamEyeLSmile: 1.0,
+    ParamEyeRSmile: 1.0,
     ParamMouthOpenY: 0.5,
-    ParamMouthForm: 0.9,
-    ParamBrowLY: 0.6,
-    ParamBrowRY: 0.6,
+    ParamMouthForm: 1.0,
+    ParamBodyAngleY: 3.0,      // body lean forward (degrees)
     ParamCheek: 0.7,
   },
 
-  // ── Extended (from AniCompanion) ──
+  // ── Extended ──
   curious: {
-    ParamEyeLOpen: 0.9,
-    ParamEyeROpen: 0.9,
+    ParamAngleX: 8.0,          // head tilt
+    ParamEyeLOpen: 1.1,
+    ParamEyeROpen: 1.1,
     ParamBrowLY: 0.4,
     ParamBrowRY: 0.4,
-    ParamMouthForm: 0.15,
-    ParamMouthOpenY: 0.05,
-    ParamEyeBallX: 0.1,
   },
   shy: {
-    ParamEyeLOpen: 0.5,
-    ParamEyeROpen: 0.5,
-    ParamEyeBallX: -0.4,      // looking away
-    ParamMouthForm: 0.2,
-    ParamBrowLY: -0.1,
-    ParamBrowRY: -0.1,
-    ParamCheek: 0.7,          // heavy blush
+    ParamAngleY: -3.0,         // looking down
+    ParamAngleX: -5.0,         // slight turn away
+    ParamCheek: 1.0,           // full blush
+    ParamEyeLSmile: 0.5,
+    ParamEyeRSmile: 0.5,
+    ParamEyeLOpen: 0.7,
+    ParamEyeROpen: 0.7,
   },
   love: {
-    ParamEyeLSmile: 0.6,
-    ParamEyeRSmile: 0.6,
-    ParamEyeLOpen: 0.65,
-    ParamEyeROpen: 0.65,
-    ParamMouthForm: 0.5,
-    ParamBrowLY: 0.1,
-    ParamBrowRY: 0.1,
+    ParamEyeLSmile: 0.8,
+    ParamEyeRSmile: 0.8,
+    ParamMouthForm: 0.6,
     ParamCheek: 0.8,
+    ParamBodyAngleX: 3.0,      // body sway
   },
+  laugh: {
+    ParamEyeLSmile: 1.0,
+    ParamEyeRSmile: 1.0,
+    ParamMouthOpenY: 0.8,
+    ParamMouthForm: 1.0,
+    ParamBodyAngleY: 2.0,
+  },
+  bored: {
+    ParamEyeLOpen: 0.5,
+    ParamEyeROpen: 0.5,
+    ParamAngleY: -2.0,         // slight head drop
+    ParamMouthForm: -0.2,
+  },
+  sleepy: {
+    ParamEyeLOpen: 0.3,
+    ParamEyeROpen: 0.3,
+    ParamAngleY: -5.0,         // head drooping
+    ParamBodyAngleY: -2.0,     // body slumping
+  },
+
+  // ── Remaining (keep defaults) ──
   smirk: {
-    ParamMouthForm: 0.5,      // half-smile
-    ParamEyeLOpen: 0.75,
-    ParamEyeROpen: 0.65,      // slightly uneven
+    ParamMouthForm: 0.5,
     ParamEyeLSmile: 0.4,
     ParamEyeRSmile: 0.1,
     ParamBrowLY: 0.2,
-    ParamBrowRY: 0.0,         // one brow up
-  },
-  sleepy: {
-    ParamEyeLOpen: 0.2,       // nearly closed
-    ParamEyeROpen: 0.2,
-    ParamMouthForm: 0.0,
-    ParamMouthOpenY: 0.08,
-    ParamBrowLY: -0.1,
-    ParamBrowRY: -0.1,
-    ParamCheek: 0.3,
+    ParamBrowRY: 0.0,
   },
   proud: {
-    ParamEyeLOpen: 0.85,
-    ParamEyeROpen: 0.85,
     ParamMouthForm: 0.35,
     ParamBrowLY: 0.35,
     ParamBrowRY: 0.35,
@@ -201,11 +154,9 @@ export const EMOTION_MAP = {
     ParamEyeLOpen: 0.5,
     ParamEyeROpen: 0.5,
     ParamMouthForm: -0.6,
-    ParamMouthOpenY: 0.05,
-    ParamCheek: 0.0,
   },
   pain: {
-    ParamEyeLOpen: 0.15,      // tightly shut
+    ParamEyeLOpen: 0.15,
     ParamEyeROpen: 0.15,
     ParamBrowLY: -0.8,
     ParamBrowRY: -0.8,
@@ -213,26 +164,6 @@ export const EMOTION_MAP = {
     ParamBrowRForm: -0.6,
     ParamMouthOpenY: 0.15,
     ParamMouthForm: -0.4,
-  },
-  laugh: {
-    ParamEyeLSmile: 1.0,
-    ParamEyeRSmile: 1.0,
-    ParamEyeLOpen: 0.25,      // happy closed eyes
-    ParamEyeROpen: 0.25,
-    ParamMouthOpenY: 0.7,     // wide open
-    ParamMouthForm: 1.0,
-    ParamBrowLY: 0.4,
-    ParamBrowRY: 0.4,
-    ParamCheek: 0.6,
-  },
-  bored: {
-    ParamEyeLOpen: 0.45,
-    ParamEyeROpen: 0.45,
-    ParamMouthForm: -0.05,
-    ParamMouthOpenY: 0.0,
-    ParamBrowLY: 0.0,
-    ParamBrowRY: 0.0,
-    ParamCheek: 0.0,
   },
 };
 

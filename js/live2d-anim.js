@@ -13,16 +13,17 @@
 import { setParameter, getParameter, hasParameters } from './live2d-scene.js';
 
 // ── Configuration ──────────────────────────────────────
+// ⚠️ Angle parameters (ParamAngleX, ParamBodyAngleX) use degree-scale values
 
-const BREATH_CYCLE_S = 4.0;       // full breath cycle (seconds)
-const BREATH_AMPLITUDE = 0.15;    // ParamBreath swing
+const BREATH_CYCLE_S = 3.5;       // full breath cycle
+const BREATH_AMPLITUDE = 1.0;     // ParamBreath swing
 const BLINK_INTERVAL_MIN = 3.0;   // seconds
 const BLINK_INTERVAL_MAX = 5.0;
-const BLINK_CLOSE_MS = 100;       // duration of eye close
-const BLINK_PAUSE_MS = 50;        // hold closed
-const BLINK_OPEN_MS = 150;        // duration of eye open
-const SWAY_PERIOD_S = 6.0;        // body sway cycle
-const SWAY_AMPLITUDE = 0.05;
+const BLINK_DURATION_S = 0.15;    // blink close + open duration
+const SWAY_PERIOD_S = 8.0;        // body sway cycle (ParamBodyAngleX)
+const SWAY_AMPLITUDE = 2.0;       // degrees
+const HEAD_SWAY_PERIOD_S = 10.0;  // head tilt cycle (ParamAngleX)
+const HEAD_SWAY_AMPLITUDE = 3.0;  // degrees
 
 // ── State ──────────────────────────────────────────────
 
@@ -70,13 +71,12 @@ export function stopIdleAnimations() {
     blinkTimer = null;
   }
 
-  // Reset idle parameters to default
+  // Reset idle parameters
   setParameter('ParamBreath', 0);
   setParameter('ParamEyeLOpen', 1);
   setParameter('ParamEyeROpen', 1);
   setParameter('ParamBodyAngleX', 0);
-  setParameter('ParamBodyAngleY', 0);
-  setParameter('ParamBodyAngleZ', 0);
+  setParameter('ParamAngleX', 0);
 
   console.log('[live2d-anim] Idle animations stopped');
 }
@@ -108,15 +108,15 @@ function tick(now) {
 
   // ── Breathing ──
   const breathPhase = (elapsed % BREATH_CYCLE_S) / BREATH_CYCLE_S;
-  const breathValue = 0.5 + Math.sin(breathPhase * Math.PI * 2) * BREATH_AMPLITUDE * 0.5;
-  setParameter('ParamBreath', breathValue);
+  setParameter('ParamBreath', 0.5 + Math.sin(breathPhase * Math.PI * 2) * BREATH_AMPLITUDE * 0.5);
 
-  // ── Body sway ──
+  // ── Body sway (ParamBodyAngleX) ──
   const swayPhase = (elapsed % SWAY_PERIOD_S) / SWAY_PERIOD_S;
-  const swayValue = Math.sin(swayPhase * Math.PI * 2) * SWAY_AMPLITUDE;
-  setParameter('ParamBodyAngleX', swayValue * 0.5);
-  setParameter('ParamBodyAngleY', swayValue);
-  setParameter('ParamBodyAngleZ', swayValue * 0.3);
+  setParameter('ParamBodyAngleX', Math.sin(swayPhase * Math.PI * 2) * SWAY_AMPLITUDE);
+
+  // ── Head sway (ParamAngleX) ──
+  const headPhase = (elapsed % HEAD_SWAY_PERIOD_S) / HEAD_SWAY_PERIOD_S;
+  setParameter('ParamAngleX', Math.sin(headPhase * Math.PI * 2) * HEAD_SWAY_AMPLITUDE);
 
   // ── Blink ──
   tickBlink(now);
@@ -129,33 +129,25 @@ function tick(now) {
 function tickBlink(now) {
   if (blinkPhase === 'idle') return;
 
-  const elapsed = now - blinkStartTime;
+  const elapsed = (now - blinkStartTime) / 1000;
+  const t = Math.min(elapsed / BLINK_DURATION_S, 1);
 
   switch (blinkPhase) {
     case 'closing': {
-      const t = Math.min(elapsed / BLINK_CLOSE_MS, 1);
-      const eased = easeInQuad(t);
-      const value = 1 - eased; // 1 → 0
+      // 0 → 1: eyes close
+      const value = 1 - easeInQuad(t);  // 1 → 0
       setParameter('ParamEyeLOpen', value);
       setParameter('ParamEyeROpen', value);
       if (t >= 1) {
-        blinkPhase = 'paused';
-        blinkStartTime = now;
-      }
-      break;
-    }
-    case 'paused': {
-      if (elapsed >= BLINK_PAUSE_MS) {
         blinkPhase = 'opening';
         blinkStartTime = now;
       }
       break;
     }
     case 'opening': {
-      const t = Math.min(elapsed / BLINK_OPEN_MS, 1);
-      const eased = easeOutQuad(t);
-      setParameter('ParamEyeLOpen', eased); // 0 → 1
-      setParameter('ParamEyeROpen', eased);
+      const value = easeOutQuad(t);    // 0 → 1
+      setParameter('ParamEyeLOpen', value);
+      setParameter('ParamEyeROpen', value);
       if (t >= 1) {
         blinkPhase = 'idle';
         scheduleNextBlink();
