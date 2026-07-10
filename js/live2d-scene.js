@@ -17,14 +17,14 @@
  */
 
 // ── Cubism Framework imports ─────────────────────────────
-// Path: lib/CubismFramework/ — compiled from SDK TS by setup.sh
-// Adjust if your SDK version differs.
-import { CubismFramework } from '../lib/CubismFramework/live2dcubismframework.js';
-import { CubismUserModel } from '../lib/CubismFramework/live2dcubismusermodel.js';
-import { CubismMoc } from '../lib/CubismFramework/live2dcubismmoc.js';
-import { CubismModelMatrix } from '../lib/CubismFramework/live2dcubismmodelmatrix.js';
-import { CubismMatrix44 } from '../lib/CubismFramework/live2dcubismmatrix44.js';
-// Note: ICubismModelSetting is an interface — at runtime check .model3.json structure
+// Path: lib/CubismFramework/ — compiled from SDK TS barrel by setup.sh
+import {
+  CubismFramework,
+  CubismUserModel,
+  CubismMoc,
+  CubismModelMatrix,
+  CubismMatrix44,
+} from '../lib/CubismFramework/live2dcubismframework.js';
 
 // ── Module state ────────────────────────────────────────
 

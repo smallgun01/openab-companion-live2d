@@ -58,21 +58,16 @@ echo ""
 echo "Compiling Cubism Framework (TypeScript → ES modules)…"
 mkdir -p "$OUT_DIR"
 
-# Bundle all Framework source files into a single ES module
-# This preserves ESM imports so our code can tree-shake
+# Bundle the Cubism Framework entry point into a single ES module
+# All sub-modules (model/, math/, motion/, etc.) are resolved transitively
 npx --yes esbuild \
-  "$FW_SRC/live2dcubismframework.ts" \
-  "$FW_SRC/live2dcubismusermodel.ts" \
-  "$FW_SRC/live2dcubismmoc.ts" \
-  "$FW_SRC/live2dcubismmodelmatrix.ts" \
-  "$FW_SRC/live2dcubismmatrix44.ts" \
+  "$FW_SRC/cubism-barrel.ts" \
   --bundle \
   --format=esm \
-  --outdir="$OUT_DIR" \
+  --outfile="$OUT_DIR/live2dcubismframework.js" \
   --target=es2020 \
   --sourcemap \
   --log-level=warning 2>&1
-
 # ── Verify output ──
 if [ -f "$OUT_DIR/live2dcubismframework.js" ]; then
   echo ""
@@ -85,4 +80,20 @@ if [ -f "$OUT_DIR/live2dcubismframework.js" ]; then
 else
   echo "❌ Compilation failed — no output files"
   exit 1
+fi
+
+# ── Copy Haru sample model ──
+echo ""
+MODEL_SRC="$SDK_DIR/../Samples/Resources/Haru"
+if [ -z "${MODEL_SRC}" ] || [ ! -d "$SDK_DIR/../Samples/Resources/Haru" ]; then
+  # Try alternate location (CubismWebSamples repo structure)
+  MODEL_SRC="$(dirname "$SDK_DIR")/../Samples/Resources/Haru"
+fi
+if [ -d "$MODEL_SRC" ]; then
+  mkdir -p "$PROJECT_DIR/models/Haru"
+  cp -r "$MODEL_SRC"/* "$PROJECT_DIR/models/Haru/"
+  echo "✓ Haru model copied to models/Haru/"
+else
+  echo "⚠ Haru model not found at $MODEL_SRC"
+  echo "  Download from Live2D SDK or CubismWebSamples repo"
 fi
