@@ -10,7 +10,8 @@
  * Post-MVP: add playMotion(motionPath) for keyframed clips.
  */
 
-import { setParameter, hasParameters } from './live2d-scene.js';
+import { setParameter, getParameter, hasParameters } from './live2d-scene.js';
+import { isExpressionActive, getExpressionParamKeys } from './expression.js';
 
 // ── Configuration ──────────────────────────────────────
 // ⚠️ Angle parameters (ParamAngleX, ParamBodyAngleX) use degree-scale values
@@ -108,20 +109,38 @@ function tick(now) {
 
   const elapsed = (now - idleStartTime) / 1000;
 
-  // ── Breathing ──
-  const breathPhase = (elapsed % BREATH_CYCLE_S) / BREATH_CYCLE_S;
-  setParameter('ParamBreath', 0.5 + Math.sin(breathPhase * Math.PI * 2) * BREATH_AMPLITUDE * 0.5);
+  // If expression is active, yield conflicting parameters (expression > idle)
+  const exprActive = isExpressionActive();
+  const exprKeys = exprActive ? getExpressionParamKeys() : new Set();
 
-  // ── Body sway (ParamBodyAngleX) ──
-  const swayPhase = (elapsed % SWAY_PERIOD_S) / SWAY_PERIOD_S;
-  setParameter('ParamBodyAngleX', Math.sin(swayPhase * Math.PI * 2) * SWAY_AMPLITUDE);
+  // ── Breathing (always runs; expression rarely touches ParamBreath) ──
+  if (!exprKeys.has('ParamBreath')) {
+    const breathPhase = (elapsed % BREATH_CYCLE_S) / BREATH_CYCLE_S;
+    setParameter('ParamBreath', 0.5 + Math.sin(breathPhase * Math.PI * 2) * BREATH_AMPLITUDE * 0.5);
+  }
 
-  // ── Head sway (ParamAngleX) ──
-  const headPhase = (elapsed % HEAD_SWAY_PERIOD_S) / HEAD_SWAY_PERIOD_S;
-  setParameter('ParamAngleX', Math.sin(headPhase * Math.PI * 2) * HEAD_SWAY_AMPLITUDE);
+  // ── Body sway (yields to expression) ──
+  if (!exprKeys.has('ParamBodyAngleX')) {
+    const swayPhase = (elapsed % SWAY_PERIOD_S) / SWAY_PERIOD_S;
+    setParameter('ParamBodyAngleX', Math.sin(swayPhase * Math.PI * 2) * SWAY_AMPLITUDE);
+  }
 
-  // ── Blink ──
-  tickBlink(now);
+  // ── Head sway (yields to expression) ──
+  if (!exprKeys.has('ParamAngleX')) {
+    const headPhase = (elapsed % HEAD_SWAY_PERIOD_S) / HEAD_SWAY_PERIOD_S;
+    setParameter('ParamAngleX', Math.sin(headPhase * Math.PI * 2) * HEAD_SWAY_AMPLITUDE);
+  }
+
+  // ── Blink (eye open/close yields to expression on those params) ──
+  if (!exprKeys.has('ParamEyeLOpen') && !exprKeys.has('ParamEyeROpen')) {
+    tickBlink(now);
+  } else {
+    // Expression controls eyes — skip blink state machine
+    if (blinkPhase !== 'idle') {
+      blinkPhase = 'idle';
+      scheduleNextBlink();
+    }
+  }
 
   idleRAF = requestAnimationFrame(tick);
 }
@@ -147,9 +166,10 @@ function tickBlink(now) {
       break;
     }
     case 'opening': {
-      const value = easeOutQuad(t);    // 0 → 1
+      // Restore to pre-blink value (preserves expression eye setting)
+      const value = blinkPreEyeL * easeOutQuad(t);  // 0 → blinkPreEyeL
       setParameter('ParamEyeLOpen', value);
-      setParameter('ParamEyeROpen', value);
+      setParameter('ParamEyeROpen', blinkPreEyeR * easeOutQuad(t));
       if (t >= 1) {
         blinkPhase = 'idle';
         scheduleNextBlink();
@@ -168,9 +188,9 @@ function scheduleNextBlink() {
   blinkTimer = setTimeout(() => {
     blinkTimer = null;
     if (!idleActive) return;
-    // Capture current eye values before blink (preserve emotion)
-    blinkPreEyeL = 1;  // default; will be set below if model available
-    blinkPreEyeR = 1;
+    // Capture actual current eye values (may be set by expression)
+    blinkPreEyeL = getParameter('ParamEyeLOpen');
+    blinkPreEyeR = getParameter('ParamEyeROpen');
     blinkPhase = 'closing';
     blinkStartTime = performance.now();
   }, delay);

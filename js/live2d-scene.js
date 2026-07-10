@@ -128,10 +128,33 @@ export async function loadModel(modelDir) {
   // Normalize directory path
   const dir = modelDir.endsWith('/') ? modelDir : modelDir + '/';
 
-  // ── Fetch .model3.json ──
+  // ── Fetch .model3.json (auto-detect filename in directory) ──
   let settingJson;
   try {
-    const resp = await fetch(dir + 'jellyfishgirl.model3.json');
+    // Try listing directory for any .model3.json file
+    let modelJsonPath = null;
+    try {
+      const listingResp = await fetch(dir);
+      if (listingResp.ok) {
+        const html = await listingResp.text();
+        const match = html.match(/href="([^"]+\.model3\.json)"/i);
+        if (match) modelJsonPath = dir + match[1];
+      }
+    } catch { /* directory listing may fail — try known names */ }
+
+    // Fallbacks
+    if (!modelJsonPath) {
+      for (const name of ['jellyfishgirl.model3.json', 'Haru.model3.json']) {
+        try {
+          const probe = await fetch(dir + name, { method: 'HEAD' });
+          if (probe.ok) { modelJsonPath = dir + name; break; }
+        } catch { /* continue */ }
+      }
+    }
+
+    if (!modelJsonPath) throw new Error('No .model3.json found in ' + dir);
+
+    const resp = await fetch(modelJsonPath);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     settingJson = await resp.json();
   } catch (err) {
@@ -148,8 +171,12 @@ export async function loadModel(modelDir) {
     userModel = null;
   }
 
-  // ── Load .moc3 ──
-  const mocFileName = settingJson.FileReferences?.Moc || 'jellyfishgirl.moc3';
+  // ── Load .moc3 (use FileReferences.Moc from model3.json) ──
+  const mocFileName = settingJson.FileReferences?.Moc;
+  if (!mocFileName) {
+    console.error('[live2d-scene] No Moc reference in .model3.json');
+    return false;
+  }
   let mocBuffer;
   try {
     const resp = await fetch(dir + mocFileName);

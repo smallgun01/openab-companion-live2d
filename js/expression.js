@@ -176,10 +176,26 @@ let lerpRAF = null;
 let lerpStart = 0;
 let lerpFrom = {};
 let lerpTo = {};
+let lerpActiveParamKeys = new Set();  // params currently being driven by expression
 const LERP_MS = 300;
 
 let lastEmotionKey = 'neutral';
 export function getLastEmotion() { return lastEmotionKey; }
+
+/**
+ * Check if an expression lerp is active (for idle to yield conflicting params).
+ */
+export function isExpressionActive() {
+  return lerpRAF !== null;
+}
+
+/**
+ * Parameters currently driven by the active expression.
+ * Idle should skip writing to these.
+ */
+export function getExpressionParamKeys() {
+  return lerpActiveParamKeys;
+}
 
 // ── Public API ─────────────────────────────────────────
 
@@ -194,6 +210,11 @@ export function parseAndApply(text) {
   }).replace(/\s{2,}/g, ' ').trim();
 
   const emotionKey = tags.length > 0 ? tags[tags.length - 1] : 'neutral';
+
+  // Skip if same emotion already playing
+  if (emotionKey === lastEmotionKey && emotionKey !== 'neutral') {
+    return cleaned;
+  }
   lastEmotionKey = emotionKey;
   const targetWeights = EMOTION_MAP[emotionKey] || EMOTION_MAP.neutral;
 
@@ -204,6 +225,7 @@ export function parseAndApply(text) {
     lerpFrom[key] = getParameter(key);
   }
   lerpTo = { ...targetWeights };
+  lerpActiveParamKeys = new Set(Object.keys(lerpTo));  // idle yields these
   lerpStart = performance.now();
   currentExpression = emotionKey;
 
@@ -230,5 +252,6 @@ function tickLerp() {
     lerpRAF = requestAnimationFrame(tickLerp);
   } else {
     lerpRAF = null;
+    lerpActiveParamKeys = new Set();
   }
 }
