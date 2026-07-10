@@ -22,3 +22,6 @@ lib/CubismFramework/
 
 # SDK sample model (proprietary — copied by setup.sh)
 models/Haru/
+
+# JellyFishGirl model (custom — not for public distribution)
+models/jellyfish-girl/

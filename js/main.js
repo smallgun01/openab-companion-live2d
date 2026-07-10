@@ -81,7 +81,7 @@ async function init() {
       const ok = initScene(canvas, settings.bgColor);
       if (ok) {
         // Load default model
-        const loaded = await loadModel('models/Haru/');
+        const loaded = await loadModel('models/jellyfish-girl/');
         if (loaded) {
           modelPrompt.classList.add('hidden');
           setStatus('connected', 'Ready');
@@ -92,7 +92,7 @@ async function init() {
         } else {
           modelPrompt.classList.remove('hidden');
           const p = modelPrompt.querySelector('p');
-          if (p) p.textContent = '⚠️ Failed to load model. Is models/Haru/ set up?';
+          if (p) p.textContent = '⚠️ Failed to load model. Is models/jellyfish-girl/ set up?';
           setStatus('error', 'Model load failed');
         }
       } else {

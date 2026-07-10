@@ -136,7 +136,7 @@ export async function loadModel(modelDir) {
   // ── Fetch .model3.json ──
   let settingJson;
   try {
-    const resp = await fetch(dir + 'Haru.model3.json');
+    const resp = await fetch(dir + 'jellyfishgirl.model3.json');
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     settingJson = await resp.json();
   } catch (err) {
@@ -154,7 +154,7 @@ export async function loadModel(modelDir) {
   }
 
   // ── Load .moc3 ──
-  const mocFileName = settingJson.FileReferences?.Moc || 'Haru.moc3';
+  const mocFileName = settingJson.FileReferences?.Moc || 'jellyfishgirl.moc3';
   let mocBuffer;
   try {
     const resp = await fetch(dir + mocFileName);

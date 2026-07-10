@@ -1,197 +1,238 @@
 /**
  * expression.js — Parse [emotion] tags from assistant text, drive Live2D expressions.
  *
- *   parseAndApply(text, model) → returns cleaned text (tags stripped)
+ *   parseAndApply(text) → returns cleaned text (tags stripped)
  *
  * Maps 19 emotion tags → Cubism parameter targets via EMOTION_MAP.
  * Parameter lerp: 300ms eased transition.
  *
- * ⚠️ EMOTION_MAP parameter values are calibrated for the Haru sample model.
- * Adjust values for other models — every Live2D model has different parameter ranges.
+ * Calibrated for: JellyFish Girl (jellyfishgirl.model3.json)
+ * — 33 parameters, no EyeBlink/LipSync groups, no .exp3.json
+ *
+ * Key parameter reference:
+ *   Eyes:      ParamEyeLOpen/ROpen, ParamEyeLSmile/RSmile
+ *   Brows:     ParamBrowLX/RX, ParamBrowLY/RY, ParamBrowLAngle/RAngle, ParamBrowLForm/RForm
+ *   Mouth:     ParamMouthForm (-1=pout, 0=neutral, 1=smile), ParamMouthOpenY (0=closed)
+ *   Cheek:     ParamCheek (blush)
+ *   Body:      ParamBodyAngleX/Y/Z
+ *   Breath:    ParamBreath
  */
 
-import { setParameter, getParameter, getParameterNames, hasParameters } from './live2d-scene.js';
+import { setParameter, getParameter, hasParameters } from './live2d-scene.js';
 
 // ── Emotion → Cubism parameter target values ────────────
-//
-// Each emotion key maps to { ParamName: targetValue (0–1) }.
-// Only listed parameters are touched; untouched params keep current value.
-//
-// Haru parameter reference:
-//   ParamMouthOpenY    — mouth vertical open (0=closed, 1=wide open)
-//   ParamMouthForm     — mouth shape (0=neutral, 1=smile, -1=frown)
-//   ParamEyeLOpen      — left eye open (1=fully open, 0=closed)
-//   ParamEyeROpen      — right eye open
-//   ParamBrowLY        — left brow vertical (-1=down, 1=up)
-//   ParamBrowRY        — right brow vertical
-//   ParamBrowLAngle    — left brow angle
-//   ParamBrowRAngle    — right brow angle
-//   ParamCheek         — blush intensity
-//   ParamEyeBallX/Y    — eye direction
-//
-// Values are ESTIMATES for Haru — tune in Cubism Viewer.
 
 export const EMOTION_MAP = {
   // ── Primitives ──
   happy: {
-    ParamMouthOpenY: 0.4,
-    ParamMouthForm: 0.8,    // smile
-    ParamEyeLOpen: 0.85,    // slight squint
-    ParamEyeROpen: 0.85,
-    ParamBrowLY: 0.2,       // brows up
-    ParamBrowRY: 0.2,
+    ParamEyeLSmile: 1.0,
+    ParamEyeRSmile: 1.0,
+    ParamEyeLOpen: 0.7,       // slight happy squint
+    ParamEyeROpen: 0.7,
+    ParamMouthForm: 0.8,      // smile
+    ParamMouthOpenY: 0.15,
+    ParamBrowLY: 0.3,
+    ParamBrowRY: 0.3,
+    ParamCheek: 0.5,          // blush
   },
   sad: {
-    ParamMouthOpenY: 0.05,
-    ParamMouthForm: -0.6,   // frown
-    ParamEyeLOpen: 0.55,    // half-closed
-    ParamEyeROpen: 0.55,
-    ParamBrowLY: -0.5,      // brows down
-    ParamBrowRY: -0.5,
+    ParamBrowLY: -0.6,        // brows down
+    ParamBrowRY: -0.6,
+    ParamBrowLForm: -0.3,
+    ParamBrowRForm: -0.3,
+    ParamEyeLOpen: 0.45,
+    ParamEyeROpen: 0.45,
+    ParamMouthForm: -0.6,     // slight frown
+    ParamMouthOpenY: 0.0,
+    ParamCheek: 0.1,
   },
   angry: {
-    ParamMouthOpenY: 0.15,
-    ParamMouthForm: -0.4,
-    ParamEyeLOpen: 0.75,
-    ParamEyeROpen: 0.75,
-    ParamBrowLY: -0.8,      // brows sharply down
-    ParamBrowRY: -0.8,
+    ParamBrowLY: -0.9,
+    ParamBrowRY: -0.9,
+    ParamBrowLAngle: -0.5,
+    ParamBrowRAngle: 0.5,     // angled brows (V-shape)
+    ParamBrowLForm: -0.5,
+    ParamBrowRForm: -0.5,
+    ParamEyeLOpen: 0.8,
+    ParamEyeROpen: 0.8,
+    ParamMouthForm: -0.3,
+    ParamMouthOpenY: 0.1,
+    ParamCheek: 0.0,
   },
   surprised: {
-    ParamMouthOpenY: 0.7,
-    ParamMouthForm: 0.1,
-    ParamEyeLOpen: 1.0,     // wide eyes
+    ParamEyeLOpen: 1.0,       // wide eyes
     ParamEyeROpen: 1.0,
-    ParamBrowLY: 0.7,       // brows high
-    ParamBrowRY: 0.7,
+    ParamEyeLSmile: 0.0,
+    ParamEyeRSmile: 0.0,
+    ParamBrowLY: 0.8,         // brows high
+    ParamBrowRY: 0.8,
+    ParamMouthOpenY: 0.5,     // mouth open
+    ParamMouthForm: 0.1,
+    ParamCheek: 0.2,
   },
   relaxed: {
-    ParamMouthOpenY: 0.05,
-    ParamMouthForm: 0.15,
-    ParamEyeLOpen: 0.7,     // relaxed eyes
-    ParamEyeROpen: 0.7,
+    ParamEyeLOpen: 0.6,       // half-closed, relaxed
+    ParamEyeROpen: 0.6,
+    ParamMouthForm: 0.15,     // gentle smile
+    ParamMouthOpenY: 0.0,
     ParamBrowLY: 0.0,
     ParamBrowRY: 0.0,
+    ParamBrowLAngle: 0.0,
+    ParamBrowRAngle: 0.0,
   },
   neutral: {
-    // All touched parameters → 0 (default/neutral)
-    ParamMouthOpenY: 0,
-    ParamMouthForm: 0,
-    ParamEyeLOpen: 1,
-    ParamEyeROpen: 1,
-    ParamBrowLY: 0,
-    ParamBrowRY: 0,
+    // Reset all touched emotion params to default
+    ParamEyeLOpen: 1.0,
+    ParamEyeROpen: 1.0,
+    ParamEyeLSmile: 0.0,
+    ParamEyeRSmile: 0.0,
+    ParamMouthForm: 0.0,
+    ParamMouthOpenY: 0.0,
+    ParamBrowLY: 0.0,
+    ParamBrowRY: 0.0,
+    ParamBrowLX: 0.0,
+    ParamBrowRX: 0.0,
+    ParamBrowLAngle: 0.0,
+    ParamBrowRAngle: 0.0,
+    ParamBrowLForm: 0.0,
+    ParamBrowRForm: 0.0,
+    ParamCheek: 0.0,
+    ParamEyeBallX: 0.0,
+    ParamEyeBallY: 0.0,
   },
 
   // ── Compounds ──
   thinking: {
+    ParamEyeLOpen: 0.7,
+    ParamEyeROpen: 0.7,
+    ParamEyeBallX: 0.4,       // look to side
+    ParamEyeBallY: 0.2,       // look up slightly
+    ParamMouthForm: 0.05,
     ParamMouthOpenY: 0.05,
-    ParamMouthForm: 0.1,
-    ParamEyeLOpen: 0.75,
-    ParamEyeROpen: 0.75,
     ParamBrowLY: 0.15,
     ParamBrowRY: 0.15,
-    ParamEyeBallX: 0.3,     // look to side (thinking)
+    ParamBrowLAngle: -0.1,
+    ParamBrowRAngle: -0.1,
   },
   confused: {
-    ParamMouthOpenY: 0.1,
-    ParamMouthForm: -0.2,
-    ParamEyeLOpen: 0.8,
-    ParamEyeROpen: 0.8,
-    ParamBrowLY: -0.3,
-    ParamBrowRY: 0.3,        // uneven brows = confusion
+    ParamBrowLY: -0.2,
+    ParamBrowRY: 0.3,         // uneven brows
+    ParamBrowLAngle: -0.3,
+    ParamBrowRAngle: 0.3,
+    ParamEyeLOpen: 0.75,
+    ParamEyeROpen: 0.75,
+    ParamMouthForm: -0.15,
+    ParamMouthOpenY: 0.05,
+    ParamEyeBallX: -0.3,
+    ParamEyeBallY: 0.1,
   },
   excited: {
-    ParamMouthOpenY: 0.6,
-    ParamMouthForm: 0.9,
     ParamEyeLOpen: 1.0,
     ParamEyeROpen: 1.0,
-    ParamBrowLY: 0.5,
-    ParamBrowRY: 0.5,
+    ParamEyeLSmile: 0.8,
+    ParamEyeRSmile: 0.8,
+    ParamMouthOpenY: 0.5,
+    ParamMouthForm: 0.9,
+    ParamBrowLY: 0.6,
+    ParamBrowRY: 0.6,
+    ParamCheek: 0.7,
   },
 
   // ── Extended (from AniCompanion) ──
   curious: {
-    ParamMouthOpenY: 0.1,
-    ParamMouthForm: 0.2,
-    ParamEyeLOpen: 0.95,
-    ParamEyeROpen: 0.95,
+    ParamEyeLOpen: 0.9,
+    ParamEyeROpen: 0.9,
     ParamBrowLY: 0.4,
     ParamBrowRY: 0.4,
+    ParamMouthForm: 0.15,
+    ParamMouthOpenY: 0.05,
+    ParamEyeBallX: 0.1,
   },
   shy: {
-    ParamMouthOpenY: 0.05,
-    ParamMouthForm: 0.3,
-    ParamEyeLOpen: 0.6,
-    ParamEyeROpen: 0.6,
-    ParamBrowLY: -0.1,
-    ParamBrowRY: -0.1,
-    ParamCheek: 0.4,         // blush
-  },
-  love: {
-    ParamMouthOpenY: 0.15,
-    ParamMouthForm: 0.6,
-    ParamEyeLOpen: 0.75,
-    ParamEyeROpen: 0.75,
-    ParamBrowLY: 0.1,
-    ParamBrowRY: 0.1,
-    ParamCheek: 0.5,
-  },
-  smirk: {
-    ParamMouthOpenY: 0.05,
-    ParamMouthForm: 0.5,    // half-smile, one side
-    ParamEyeLOpen: 0.8,
-    ParamEyeROpen: 0.7,     // slightly uneven
-    ParamBrowLY: 0.2,
-    ParamBrowRY: 0.0,
-  },
-  sleepy: {
-    ParamMouthOpenY: 0.1,
-    ParamMouthForm: 0.0,
-    ParamEyeLOpen: 0.3,     // nearly closed
-    ParamEyeROpen: 0.3,
-    ParamBrowLY: 0.0,
-    ParamBrowRY: 0.0,
-  },
-  proud: {
-    ParamMouthOpenY: 0.05,
-    ParamMouthForm: 0.4,
-    ParamEyeLOpen: 0.85,
-    ParamEyeROpen: 0.85,
-    ParamBrowLY: 0.3,
-    ParamBrowRY: 0.3,
-  },
-  disgusted: {
-    ParamMouthOpenY: 0.05,
-    ParamMouthForm: -0.7,
-    ParamEyeLOpen: 0.55,
-    ParamEyeROpen: 0.55,
-    ParamBrowLY: -0.6,
-    ParamBrowRY: -0.6,
-  },
-  pain: {
-    ParamMouthOpenY: 0.2,
-    ParamMouthForm: -0.5,
-    ParamEyeLOpen: 0.2,     // tightly shut
-    ParamEyeROpen: 0.2,
-    ParamBrowLY: -0.7,
-    ParamBrowRY: -0.7,
-  },
-  laugh: {
-    ParamMouthOpenY: 0.8,
-    ParamMouthForm: 1.0,
-    ParamEyeLOpen: 0.3,     // happy squint
-    ParamEyeROpen: 0.3,
-    ParamBrowLY: 0.3,
-    ParamBrowRY: 0.3,
-  },
-  bored: {
-    ParamMouthOpenY: 0.05,
-    ParamMouthForm: -0.1,
     ParamEyeLOpen: 0.5,
     ParamEyeROpen: 0.5,
+    ParamEyeBallX: -0.4,      // looking away
+    ParamMouthForm: 0.2,
+    ParamBrowLY: -0.1,
+    ParamBrowRY: -0.1,
+    ParamCheek: 0.7,          // heavy blush
+  },
+  love: {
+    ParamEyeLSmile: 0.6,
+    ParamEyeRSmile: 0.6,
+    ParamEyeLOpen: 0.65,
+    ParamEyeROpen: 0.65,
+    ParamMouthForm: 0.5,
+    ParamBrowLY: 0.1,
+    ParamBrowRY: 0.1,
+    ParamCheek: 0.8,
+  },
+  smirk: {
+    ParamMouthForm: 0.5,      // half-smile
+    ParamEyeLOpen: 0.75,
+    ParamEyeROpen: 0.65,      // slightly uneven
+    ParamEyeLSmile: 0.4,
+    ParamEyeRSmile: 0.1,
+    ParamBrowLY: 0.2,
+    ParamBrowRY: 0.0,         // one brow up
+  },
+  sleepy: {
+    ParamEyeLOpen: 0.2,       // nearly closed
+    ParamEyeROpen: 0.2,
+    ParamMouthForm: 0.0,
+    ParamMouthOpenY: 0.08,
+    ParamBrowLY: -0.1,
+    ParamBrowRY: -0.1,
+    ParamCheek: 0.3,
+  },
+  proud: {
+    ParamEyeLOpen: 0.85,
+    ParamEyeROpen: 0.85,
+    ParamMouthForm: 0.35,
+    ParamBrowLY: 0.35,
+    ParamBrowRY: 0.35,
+    ParamCheek: 0.2,
+  },
+  disgusted: {
+    ParamBrowLY: -0.7,
+    ParamBrowRY: -0.7,
+    ParamBrowLForm: -0.5,
+    ParamBrowRForm: -0.5,
+    ParamEyeLOpen: 0.5,
+    ParamEyeROpen: 0.5,
+    ParamMouthForm: -0.6,
+    ParamMouthOpenY: 0.05,
+    ParamCheek: 0.0,
+  },
+  pain: {
+    ParamEyeLOpen: 0.15,      // tightly shut
+    ParamEyeROpen: 0.15,
+    ParamBrowLY: -0.8,
+    ParamBrowRY: -0.8,
+    ParamBrowLForm: -0.6,
+    ParamBrowRForm: -0.6,
+    ParamMouthOpenY: 0.15,
+    ParamMouthForm: -0.4,
+  },
+  laugh: {
+    ParamEyeLSmile: 1.0,
+    ParamEyeRSmile: 1.0,
+    ParamEyeLOpen: 0.25,      // happy closed eyes
+    ParamEyeROpen: 0.25,
+    ParamMouthOpenY: 0.7,     // wide open
+    ParamMouthForm: 1.0,
+    ParamBrowLY: 0.4,
+    ParamBrowRY: 0.4,
+    ParamCheek: 0.6,
+  },
+  bored: {
+    ParamEyeLOpen: 0.45,
+    ParamEyeROpen: 0.45,
+    ParamMouthForm: -0.05,
+    ParamMouthOpenY: 0.0,
     ParamBrowLY: 0.0,
     ParamBrowRY: 0.0,
+    ParamCheek: 0.0,
   },
 };
 
@@ -202,26 +243,18 @@ const TAG_RE = /\[([a-zA-Z]+)\]/g;
 let currentExpression = null;
 let lerpRAF = null;
 let lerpStart = 0;
-let lerpFrom = {};  // { ParamName: value }
-let lerpTo = {};    // { ParamName: value }
+let lerpFrom = {};
+let lerpTo = {};
 const LERP_MS = 300;
 
-/** Track the last detected emotion key. */
 let lastEmotionKey = 'neutral';
 export function getLastEmotion() { return lastEmotionKey; }
 
 // ── Public API ─────────────────────────────────────────
 
-/**
- * Parse [tag] markers from text, apply matching Cubism parameter targets.
- *
- * @param {string} text  — assistant response (may contain [tags])
- * @returns {string} cleaned text with tags stripped
- */
 export function parseAndApply(text) {
   if (!text || !hasParameters()) return text;
 
-  // Collect all valid emotion tags
   const tags = [];
   const cleaned = text.replace(TAG_RE, (match, tag) => {
     const lower = tag.toLowerCase();
@@ -229,12 +262,10 @@ export function parseAndApply(text) {
     return '';
   }).replace(/\s{2,}/g, ' ').trim();
 
-  // Use last valid tag, or neutral
   const emotionKey = tags.length > 0 ? tags[tags.length - 1] : 'neutral';
   lastEmotionKey = emotionKey;
   const targetWeights = EMOTION_MAP[emotionKey] || EMOTION_MAP.neutral;
 
-  // Start lerp from current values to target
   if (lerpRAF) cancelAnimationFrame(lerpRAF);
 
   lerpFrom = {};
@@ -246,7 +277,6 @@ export function parseAndApply(text) {
   currentExpression = emotionKey;
 
   tickLerp();
-
   return cleaned;
 }
 
@@ -257,10 +287,8 @@ function tickLerp() {
 
   const elapsed = performance.now() - lerpStart;
   const t = Math.min(elapsed / LERP_MS, 1.0);
-  // Ease-out cubic
-  const eased = 1 - Math.pow(1 - t, 3);
+  const eased = 1 - Math.pow(1 - t, 3);   // ease-out cubic
 
-  // Interpolate each target parameter
   for (const key of Object.keys(lerpTo)) {
     const from = lerpFrom[key] ?? 0;
     const value = from + (lerpTo[key] - from) * eased;
