@@ -87,7 +87,7 @@ openab-companion-live2d/
 
 - **Code**: MIT — see [LICENSE](LICENSE)
 - **Cubism SDK**: Proprietary (Live2D Inc.) — see [lib/LICENSE.md](lib/LICENSE.md)
-- **Sample model (Haru)**: Live2D Inc., included in SDK for development use
+- **JellyFish Girl model**: Custom model — see repo for details
 
 ## Related
 

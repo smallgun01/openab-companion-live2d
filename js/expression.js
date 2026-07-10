@@ -64,9 +64,31 @@ export const EMOTION_MAP = {
     ParamEyeRSmile: 0.4,
     ParamMouthForm: 0.3,
   },
-  neutral: {},  // idle takes over — no parameter overrides
-
-  // ── Compounds ──
+  neutral: {
+    // Explicitly reset ALL parameters touched by any emotion
+    // (empty {} means nothing resets → expression params stick forever)
+    ParamEyeLOpen: 1.0,
+    ParamEyeROpen: 1.0,
+    ParamEyeLSmile: 0.0,
+    ParamEyeRSmile: 0.0,
+    ParamEyeBallX: 0.0,
+    ParamEyeBallY: 0.0,
+    ParamBrowLY: 0.0,
+    ParamBrowRY: 0.0,
+    ParamBrowLAngle: 0.0,
+    ParamBrowRAngle: 0.0,
+    ParamBrowLForm: 0.0,
+    ParamBrowRForm: 0.0,
+    ParamMouthForm: 0.0,
+    ParamMouthOpenY: 0.0,
+    ParamCheek: 0.0,
+    ParamAngleX: 0.0,
+    ParamAngleY: 0.0,
+    ParamAngleZ: 0.0,
+    ParamBodyAngleX: 0.0,
+    ParamBodyAngleY: 0.0,
+    ParamBodyAngleZ: 0.0,
+  },
   thinking: {
     ParamAngleX: 5.0,          // head tilt (degrees)
     ParamEyeBallY: 0.5,        // looking up
@@ -171,7 +193,6 @@ const TAG_RE = /\[([a-zA-Z]+)\]/g;
 
 // ── Lerp state ─────────────────────────────────────────
 
-let currentExpression = null;
 let lerpRAF = null;
 let lerpStart = 0;
 let lerpFrom = {};
@@ -227,7 +248,6 @@ export function parseAndApply(text) {
   lerpTo = { ...targetWeights };
   lerpActiveParamKeys = new Set(Object.keys(lerpTo));  // idle yields these
   lerpStart = performance.now();
-  currentExpression = emotionKey;
 
   tickLerp();
   return cleaned;

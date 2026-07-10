@@ -317,10 +317,6 @@ function tick(now) {
 
   if (!gl || !canvas) return;
 
-  // Resize if needed
-  const w = Math.floor(canvas.width / devicePixelRatio);
-  const h = Math.floor(canvas.height / devicePixelRatio);
-
   if (gl.canvas.width !== canvas.width || gl.canvas.height !== canvas.height) {
     gl.canvas.width = canvas.width;
     gl.canvas.height = canvas.height;
