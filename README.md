@@ -69,7 +69,7 @@ openab-companion-live2d/
 │   ├── setup.sh            One-time SDK compilation script
 │   └── LICENSE.md          Live2D SDK license notice
 ├── models/
-│   └── Haru/               Default model (from SDK samples)
+│   └── Haru/               JellyFish Girl (custom model)
 ├── motions/                Post-MVP: .motion3.json files
 ├── LICENSE                 MIT
 └── README.md

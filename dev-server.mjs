@@ -109,14 +109,14 @@ const server = http.createServer((req, res) => {
   serveFile(res, filePath);
 });
 
-server.listen(PORT, () => {
-  // ⚠️ Refuse to start in production — the proxy has rejectUnauthorized: false
-  if (process.env.NODE_ENV === 'production') {
-    console.error('❌ FATAL: dev-server.mjs must not run in production (rejectUnauthorized is disabled).');
-    process.exit(1);
-  }
+// ⚠️ Refuse to start in production — must check BEFORE listening
+if (process.env.NODE_ENV === 'production') {
+  console.error('❌ FATAL: dev-server.mjs must not run in production (rejectUnauthorized is disabled).');
+  process.exit(1);
+}
 
-  console.log(`\n🔺 OpenAB Companion dev server`);
+server.listen(PORT, () => {
+  console.log(`\n🔺 OpenAB Companion Live2D dev server`);
   console.log(`   http://localhost:${PORT}  ←  open this in your browser`);
   console.log(`   API proxy → https://${TARGET}/v1/*\n`);
 });

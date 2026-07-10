@@ -44,11 +44,11 @@ let bgColor = [0.102, 0.102, 0.180, 1.0]; // #1a1a2e
 /** @type {number} — render loop animation frame id */
 let animationFrameId = null;
 
-/** @type {WebGLFramebuffer|null} — unused; kept for future render-target support */
-let renderFramebuffer = null;
+/** @type {WebGLTexture[]} — tracked for cleanup on dispose */
+const textures = [];
 
-/** @type {WebGLTexture|null} */
-let renderTexture = null;
+/** @type {boolean} — first draw error already logged */
+let drawErrorLogged = false;
 
 /** @type {number} — canvas pixel ratio */
 let devicePixelRatio = 1;
@@ -338,8 +338,12 @@ function tick(now) {
       userModel.update?.();
       const projection = new CubismMatrix44();
       userModel.draw?.(projection);
+      drawErrorLogged = false;  // reset on success
     } catch (err) {
-      // Silently skip frame on draw error
+      if (!drawErrorLogged) {
+        console.warn('[live2d-scene] Render error:', err.message);
+        drawErrorLogged = true;
+      }
     }
   }
 }
@@ -377,6 +381,7 @@ function createGLTexture(image) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   gl.bindTexture(gl.TEXTURE_2D, null);
+  textures.push(tex);  // track for cleanup
   return tex;
 }
 
@@ -420,15 +425,11 @@ export function dispose() {
     userModel = null;
   }
 
-  if (renderFramebuffer && gl) {
-    gl.deleteFramebuffer(renderFramebuffer);
-    renderFramebuffer = null;
+  // Cleanup tracked textures
+  for (const tex of textures) {
+    if (gl) try { gl.deleteTexture(tex); } catch {}
   }
-
-  if (renderTexture && gl) {
-    gl.deleteTexture(renderTexture);
-    renderTexture = null;
-  }
+  textures.length = 0;
 
   if (frameworkReady) {
     try { CubismFramework.dispose?.(); } catch {}

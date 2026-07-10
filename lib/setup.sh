@@ -82,18 +82,8 @@ else
   exit 1
 fi
 
-# ── Copy Haru sample model ──
+# ── Model note ──
 echo ""
-MODEL_SRC="$SDK_DIR/../Samples/Resources/Haru"
-if [ -z "${MODEL_SRC}" ] || [ ! -d "$SDK_DIR/../Samples/Resources/Haru" ]; then
-  # Try alternate location (CubismWebSamples repo structure)
-  MODEL_SRC="$(dirname "$SDK_DIR")/../Samples/Resources/Haru"
-fi
-if [ -d "$MODEL_SRC" ]; then
-  mkdir -p "$PROJECT_DIR/models/Haru"
-  cp -r "$MODEL_SRC"/* "$PROJECT_DIR/models/Haru/"
-  echo "✓ Haru model copied to models/Haru/"
-else
-  echo "⚠ Haru model not found at $MODEL_SRC"
-  echo "  Download from Live2D SDK or CubismWebSamples repo"
-fi
+echo "ℹ️  Place your Live2D model under models/<name>/"
+echo "   The companion auto-detects .model3.json files."
+echo "   Default expected: models/jellyfish-girl/"
