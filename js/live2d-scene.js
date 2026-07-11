@@ -1,7 +1,9 @@
 /**
  * live2d-scene.js — Cubism SDK initialization, model loading, WebGL render loop.
- *
- *   initScene(canvas, bgColor)    — one-time WebGL + CubismFramework setup
+ */
+console.log('[live2d-scene] CODE VERSION: pixel-clip-fix-v4 — translateRelative(-1, 1)');
+
+/**
  *   loadModel(modelDir)           — load .model3.json + textures
  *   setParameter(name, value)     — set a Cubism parameter (0–1)
  *   getParameter(name)            — get current parameter value
@@ -48,6 +50,9 @@ import {
 } from '../lib/CubismFramework/live2dcubismframework.js';
 
 // ── Module state ────────────────────────────────────────
+
+/** @type {boolean} — renderer fully initialized (startUp + shaders done) */
+let renderReady = false;
 
 /** @type {WebGLRenderingContext} */
 let gl;
@@ -225,82 +230,58 @@ export async function loadModel(modelDir) {
     userModel.loadModel(mocBuffer);  // handles Moc creation, param save, model matrix
     console.log('[live2d-scene] loadModel OK, creating renderer...');
 
+    // ── setupLayout MUST happen before render loop starts drawing ──
+    // The render loop begins as soon as userModel._model is non-null.
+    const matrix = userModel.getModelMatrix?.();
+    if (matrix) {
+      const modelObj = userModel.getModel?.();
+      const mw = modelObj?.getCanvasWidth?.() || 1;
+      const mh = modelObj?.getCanvasHeight?.() || 1;
+      const cvw = canvas.width / devicePixelRatio;
+      const cvh = canvas.height / devicePixelRatio;
+      setupLayout(matrix, mw, mh);
+      console.log('[live2d-scene] Model matrix set — canvas:', cvw, 'x', cvh);
+    }
+
     // Create renderer with canvas dimensions
     const cw = Math.floor(canvas.width / devicePixelRatio);
     const ch = Math.floor(canvas.height / devicePixelRatio);
     userModel.createRenderer(cw, ch);
-
-    // ⚠️ CRITICAL: CubismRenderer_WebGL.startUp(gl) must be called after
-    // createRenderer(). Without it, this.gl is null and drawModel() silently
-    // renders nothing. initialize() explicitly skips GL context setup.
     const renderer = userModel.getRenderer();
+
+    // ── Load textures BEFORE startUp (Open-LLM-VTuber order) ──
+    // startUp(gl) creates clipping mask render targets; textures must be
+    // bound before that so the mask pipeline has correct texture data.
+    const texturePaths = settingJson.FileReferences?.Textures || [];
+    for (let i = 0; i < texturePaths.length; i++) {
+      const texPath = texturePaths[i];
+      try {
+        const img = await loadImage(dir + texPath);
+        const tex = createGLTexture(img);
+        if (renderer) {
+          renderer.bindTexture?.(i, tex);
+          console.log(`[live2d-scene] Texture ${i} (${texPath}) bound OK`);
+        }
+      } catch (err) {
+        console.warn(`[live2d-scene] Texture ${i} (${texPath}) failed:`, err.message);
+      }
+    }
+
+    // ── startUp + shaders AFTER textures (Open-LLM-VTuber order) ──
     if (renderer && renderer.startUp) {
       renderer.startUp(gl);
-      console.log('[live2d-scene] Renderer startUp(gl) called');
-
-      // 🔬 Force shader loading + monkey-patch to trace
-      const proto = Object.getPrototypeOf(renderer);
-      const origLoadShaders = proto.loadShaders;
-      proto.loadShaders = function (sp) {
-        const shader = this._rendererProfile?._shader || 'unknown';
-        console.log('[live2d-scene] renderer.loadShaders() called — gl exists:', !!this.gl);
-        return origLoadShaders.call(this, sp);
-      };
-      // Try explicit call
-      console.log('[live2d-scene] Calling renderer.loadShaders() explicitly...');
-      try { renderer.loadShaders(); } catch(e) { console.warn('[live2d-scene] loadShaders threw:', e.message); }
+      renderer.loadShaders();
+      console.log('[live2d-scene] Renderer startUp(gl) + loadShaders() done');
     } else {
       console.warn('[live2d-scene] Renderer has no startUp method');
     }
+    renderReady = true;  // only start drawing after everything is ready
 
     console.log('[live2d-scene] Model loaded from MOC');
   } catch (err) {
     console.error('[live2d-scene] Model creation failed:', err.message, err.stack);
     return false;
   }
-
-  // ── Load textures ──
-  const texturePaths = settingJson.FileReferences?.Textures || [];
-  for (let i = 0; i < texturePaths.length; i++) {
-    const texPath = texturePaths[i];
-    try {
-      const img = await loadImage(dir + texPath);
-      const tex = createGLTexture(img);
-      // Register texture with Cubism renderer
-      const renderer = userModel.getRenderer?.();
-      if (renderer) {
-        try {
-          renderer.bindTexture?.(i, tex);
-          console.log(`[live2d-scene] Texture ${i} (${texPath}) bound OK`);
-        } catch (e) {
-          console.warn(`[live2d-scene] bindTexture failed for ${i}:`, e.message);
-        }
-      } else {
-        console.warn('[live2d-scene] No renderer for texture binding');
-      }
-    } catch (err) {
-      console.warn(`[live2d-scene] Texture ${i} (${texPath}) failed:`, err.message);
-    }
-  }
-
-  // ── Setup model matrix ──
-  const matrix = userModel.getModelMatrix?.();
-  if (matrix) {
-    const modelObj = userModel.getModel?.();
-    const cw = modelObj?.getCanvasWidth?.();
-    const ch = modelObj?.getCanvasHeight?.();
-    console.log('[live2d-scene] Model canvas:', cw, 'x', ch);
-    console.log('[live2d-scene] Viewport:', canvas.width, 'x', canvas.height);
-    const dc = modelObj?._model?.drawables?.count;
-    console.log('[live2d-scene] Drawables:', dc, '| Vert[0]=', modelObj?._model?.drawables?.vertexCounts?.[0]);
-
-    // Scale model to fit canvas
-    const cvw = canvas.width / devicePixelRatio;
-    const cvh = canvas.height / devicePixelRatio;
-    const mw = modelObj?.getCanvasWidth?.() || 1;
-    const mh = modelObj?.getCanvasHeight?.() || 1;
-    setupLayout(matrix, mw, mh);
-    console.log('[live2d-scene] Canvas:', cvw, 'x', cvh, 'model:', mw, 'x', mh);
 
   console.log('[live2d-scene] Model loaded:', modelDir);
   return true;
@@ -410,7 +391,7 @@ function tick(now) {
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
   // Draw model if loaded
-  if (userModel && frameworkReady) {
+  if (userModel && frameworkReady && renderReady) {
     if (!_drawFirstLogged) {
       _drawFirstLogged = true;
       const renderer = userModel.getRenderer?.();
@@ -456,7 +437,7 @@ function resizeCanvas() {
 /**
  * Build projection: pixel space → WebGL clip space [-1, 1].
  * Model matrix (setupLayout) outputs pixel coordinates.
- * Y is flipped: WebGL Y ↑, pixel Y ↓.
+ * Y is flipped: WebGL Y ↑, pixel Y ↓, so translate Y = +1.
  */
 function buildProjection() {
   if (!canvas) return;
@@ -464,7 +445,12 @@ function buildProjection() {
   const ch = canvas.height / devicePixelRatio;
   projectionMatrix = new CubismMatrix44();
   projectionMatrix.scale(2.0 / cw, -2.0 / ch);
-  projectionMatrix.translateRelative(-1.0, -1.0);
+  // CubismMatrix44.multiply(a,b) = b*a → scale * translate would put translate
+  // BEFORE scale. We need translate AFTER scale. Set manually:
+  const arr = projectionMatrix.getArray();
+  arr[12] = -1.0;  // translate X in clip space
+  arr[13] = 1.0;   // translate Y in clip space (positive for Y-flip)
+  console.log('[live2d-scene] buildProjection: scale(', (2.0/cw).toFixed(4), ',', (-2.0/ch).toFixed(4), ') m[12]=-1 m[13]=1');
 }
 
 // ── Helpers ────────────────────────────────────────────
