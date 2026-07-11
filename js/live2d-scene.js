@@ -294,11 +294,13 @@ export async function loadModel(modelDir) {
     const dc = modelObj?._model?.drawables?.count;
     console.log('[live2d-scene] Drawables:', dc, '| Vert[0]=', modelObj?._model?.drawables?.vertexCounts?.[0]);
 
-    // Use default CubismModelMatrix from loadModel (no manual setup)
+    // Scale model to fit canvas
     const cvw = canvas.width / devicePixelRatio;
     const cvh = canvas.height / devicePixelRatio;
-    console.log('[live2d-scene] Canvas:', cvw, 'x', cvh, '| using default model matrix');
-  }
+    const mw = modelObj?.getCanvasWidth?.() || 1;
+    const mh = modelObj?.getCanvasHeight?.() || 1;
+    setupLayout(matrix, mw, mh);
+    console.log('[live2d-scene] Canvas:', cvw, 'x', cvh, 'model:', mw, 'x', mh);
 
   console.log('[live2d-scene] Model loaded:', modelDir);
   return true;
@@ -452,21 +454,17 @@ function resizeCanvas() {
 }
 
 /**
- * Build projection matrix: Cubism screen space → WebGL clip space.
- * Model matrix already handles model→screen mapping via CubismModelMatrix.
- * Projection adds aspect ratio correction only.
+ * Build projection: pixel space → WebGL clip space [-1, 1].
+ * Model matrix (setupLayout) outputs pixel coordinates.
+ * Y is flipped: WebGL Y ↑, pixel Y ↓.
  */
 function buildProjection() {
   if (!canvas) return;
   const cw = canvas.width / devicePixelRatio;
   const ch = canvas.height / devicePixelRatio;
   projectionMatrix = new CubismMatrix44();
-  // Same pattern as Open-LLM-VTuber onUpdate()
-  if (cw < ch) {
-    projectionMatrix.scale(1.0, cw / ch);
-  } else {
-    projectionMatrix.scale(ch / cw, 1.0);
-  }
+  projectionMatrix.scale(2.0 / cw, -2.0 / ch);
+  projectionMatrix.translateRelative(-1.0, -1.0);
 }
 
 // ── Helpers ────────────────────────────────────────────
@@ -497,15 +495,15 @@ function createGLTexture(image) {
 function setupLayout(matrix, modelWidth, modelHeight) {
   if (!canvas) return;
 
-  const canvasW = canvas.width / devicePixelRatio;
-  const canvasH = canvas.height / devicePixelRatio;
+  const cw = canvas.width / devicePixelRatio;
+  const ch = canvas.height / devicePixelRatio;
 
-  // CubismModelMatrix already has Y-flip from constructor (scaleY = -w/width).
-  // Just adjust scale to fit canvas height and center horizontally.
-  // Do NOT call loadIdentity() — it destroys the Y-flip.
-  const scale = canvasH / (modelHeight || 1);
+  // Reset to identity, then scale model from logical units → pixel space.
+  // The projection matrix (buildProjection) maps pixel → clip space.
+  matrix.loadIdentity();
+  const scale = ch / (modelHeight || 1);
   const scaledW = (modelWidth || 1) * scale;
-  const offsetX = (canvasW - scaledW) / 2;
+  const offsetX = (cw - scaledW) / 2;
 
   matrix.scale(scale, scale);
   matrix.translateRelative(offsetX / scale, 0);
