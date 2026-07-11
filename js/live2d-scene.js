@@ -16,6 +16,29 @@
  * Cubism SDK is (c) Live2D Inc. — see lib/LICENSE.md
  */
 
+// ── Fix 1: csmGetMocVersion (Core 5.1.0 expects pointer, Framework passes ArrayBuffer)
+(function patchCsmGetMocVersion() {
+  const orig = Live2DCubismCore.Version.csmGetMocVersion;
+  Live2DCubismCore.Version.csmGetMocVersion = function (mocBytes) {
+    if (mocBytes && typeof mocBytes.byteLength === 'number') return 0;
+    return orig.call(this, mocBytes);
+  };
+})();
+
+// ── Fix 2: Model.fromMoc — inject offscreens + blendModes (Core 5.1.0 missing)
+(function patchModelFromMoc() {
+  const origFromMoc = Live2DCubismCore.Model.fromMoc;
+  Live2DCubismCore.Model.fromMoc = function (moc) {
+    const model = origFromMoc.call(this, moc);
+    if (model) {
+      if (!model.offscreens) model.offscreens = { count: 0 };
+      if (model.drawables && !model.drawables.blendModes)
+        model.drawables.blendModes = new Int32Array(model.drawables.count);
+    }
+    return model;
+  };
+})();
+
 // ── Cubism Framework imports ─────────────────────────────
 // Path: lib/CubismFramework/ — compiled from SDK TS barrel by setup.sh
 import {
@@ -40,6 +63,9 @@ let modelSetting = null;
 
 /** @type {number[]} — clear color [r, g, b, a] 0–1 */
 let bgColor = [0.102, 0.102, 0.180, 1.0]; // #1a1a2e
+
+/** @type {CubismMatrix44} — shared orthographic projection, rebuilt on resize */
+let projectionMatrix = null;
 
 /** @type {number} — render loop animation frame id */
 let animationFrameId = null;
@@ -103,6 +129,10 @@ export function initScene(canvasEl, colorHex) {
 
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
+
+  // Build orthographic projection: pixel coords → clip space [-1, 1]
+  // Y is flipped: WebGL Y ↑ but model Y ↓ in pixel space
+  buildProjection();
 
   // Start empty render loop (model drawn after load)
   lastTime = performance.now();
@@ -189,17 +219,43 @@ export async function loadModel(modelDir) {
 
   // ── Create model from MOC ──
   try {
+    console.log('[live2d-scene] mocBuffer type:', mocBuffer?.constructor?.name, 'size:', mocBuffer?.byteLength);
     userModel = new CubismUserModel();
+    console.log('[live2d-scene] CubismUserModel created, calling loadModel...');
     userModel.loadModel(mocBuffer);  // handles Moc creation, param save, model matrix
+    console.log('[live2d-scene] loadModel OK, creating renderer...');
 
     // Create renderer with canvas dimensions
     const cw = Math.floor(canvas.width / devicePixelRatio);
     const ch = Math.floor(canvas.height / devicePixelRatio);
     userModel.createRenderer(cw, ch);
 
+    // ⚠️ CRITICAL: CubismRenderer_WebGL.startUp(gl) must be called after
+    // createRenderer(). Without it, this.gl is null and drawModel() silently
+    // renders nothing. initialize() explicitly skips GL context setup.
+    const renderer = userModel.getRenderer();
+    if (renderer && renderer.startUp) {
+      renderer.startUp(gl);
+      console.log('[live2d-scene] Renderer startUp(gl) called');
+
+      // 🔬 Force shader loading + monkey-patch to trace
+      const proto = Object.getPrototypeOf(renderer);
+      const origLoadShaders = proto.loadShaders;
+      proto.loadShaders = function (sp) {
+        const shader = this._rendererProfile?._shader || 'unknown';
+        console.log('[live2d-scene] renderer.loadShaders() called — gl exists:', !!this.gl);
+        return origLoadShaders.call(this, sp);
+      };
+      // Try explicit call
+      console.log('[live2d-scene] Calling renderer.loadShaders() explicitly...');
+      try { renderer.loadShaders(); } catch(e) { console.warn('[live2d-scene] loadShaders threw:', e.message); }
+    } else {
+      console.warn('[live2d-scene] Renderer has no startUp method');
+    }
+
     console.log('[live2d-scene] Model loaded from MOC');
   } catch (err) {
-    console.error('[live2d-scene] Model creation failed:', err.message);
+    console.error('[live2d-scene] Model creation failed:', err.message, err.stack);
     return false;
   }
 
@@ -213,7 +269,14 @@ export async function loadModel(modelDir) {
       // Register texture with Cubism renderer
       const renderer = userModel.getRenderer?.();
       if (renderer) {
-        try { renderer.bindTexture?.(i, tex); } catch { /* ignore */ }
+        try {
+          renderer.bindTexture?.(i, tex);
+          console.log(`[live2d-scene] Texture ${i} (${texPath}) bound OK`);
+        } catch (e) {
+          console.warn(`[live2d-scene] bindTexture failed for ${i}:`, e.message);
+        }
+      } else {
+        console.warn('[live2d-scene] No renderer for texture binding');
       }
     } catch (err) {
       console.warn(`[live2d-scene] Texture ${i} (${texPath}) failed:`, err.message);
@@ -223,11 +286,18 @@ export async function loadModel(modelDir) {
   // ── Setup model matrix ──
   const matrix = userModel.getModelMatrix?.();
   if (matrix) {
-    const modelW = userModel.getModel?.()?.getCanvasWidth?.() ||
-      settingJson.FileReferences?.CanvasWidth || 1000;
-    const modelH = userModel.getModel?.()?.getCanvasHeight?.() ||
-      settingJson.FileReferences?.CanvasHeight || 1000;
-    setupLayout(matrix, modelW, modelH);
+    const modelObj = userModel.getModel?.();
+    const cw = modelObj?.getCanvasWidth?.();
+    const ch = modelObj?.getCanvasHeight?.();
+    console.log('[live2d-scene] Model canvas:', cw, 'x', ch);
+    console.log('[live2d-scene] Viewport:', canvas.width, 'x', canvas.height);
+    const dc = modelObj?._model?.drawables?.count;
+    console.log('[live2d-scene] Drawables:', dc, '| Vert[0]=', modelObj?._model?.drawables?.vertexCounts?.[0]);
+
+    // Use default CubismModelMatrix from loadModel (no manual setup)
+    const cvw = canvas.width / devicePixelRatio;
+    const cvh = canvas.height / devicePixelRatio;
+    console.log('[live2d-scene] Canvas:', cvw, 'x', cvh, '| using default model matrix');
   }
 
   console.log('[live2d-scene] Model loaded:', modelDir);
@@ -309,11 +379,20 @@ export function hasParameters() {
 // ── Rendering ──────────────────────────────────────────
 
 let lastTime = 0;
+let _drawFirstLogged = false;
+let _frameCount = 0;
+let _frameLogged = false;
 
 function tick(now) {
   animationFrameId = requestAnimationFrame(tick);
   const deltaTime = (now - lastTime) / 1000;
   lastTime = now;
+
+  _frameCount++;
+  if (!_frameLogged && _frameCount === 60) {
+    console.log('[live2d-scene] Render loop running — 60 frames drawn');
+    _frameLogged = true;
+  }
 
   if (!gl || !canvas) return;
 
@@ -330,14 +409,29 @@ function tick(now) {
 
   // Draw model if loaded
   if (userModel && frameworkReady) {
+    if (!_drawFirstLogged) {
+      _drawFirstLogged = true;
+      const renderer = userModel.getRenderer?.();
+      const model = userModel.getModel?.();
+      console.log('[live2d-scene] First draw() — renderer:', !!renderer, '| model:', !!model);
+      console.log('[live2d-scene] Projection:', projectionMatrix?.getArray?.());
+      console.log('[live2d-scene] ModelMatrix:', userModel.getModelMatrix?.()?.getArray?.());
+    }
     try {
       userModel.update?.();
-      const projection = new CubismMatrix44();
-      userModel.draw?.(projection);
-      drawErrorLogged = false;  // reset on success
+      userModel.draw?.(projectionMatrix);
+      drawErrorLogged = false;
+      // Check WebGL errors once per 60 frames
+      if (_frameCount % 60 === 0) {
+        let err = gl.getError();
+        while (err !== gl.NO_ERROR) {
+          console.warn('[live2d-scene] WebGL error:', err);
+          err = gl.getError();
+        }
+      }
     } catch (err) {
       if (!drawErrorLogged) {
-        console.warn('[live2d-scene] Render error:', err.message);
+        console.warn('[live2d-scene] Render error:', err.message, err.stack);
         drawErrorLogged = true;
       }
     }
@@ -354,6 +448,25 @@ function resizeCanvas() {
   canvas.height = Math.floor(rect.height * devicePixelRatio);
   canvas.style.width = rect.width + 'px';
   canvas.style.height = rect.height + 'px';
+  buildProjection();
+}
+
+/**
+ * Build projection matrix: Cubism screen space → WebGL clip space.
+ * Model matrix already handles model→screen mapping via CubismModelMatrix.
+ * Projection adds aspect ratio correction only.
+ */
+function buildProjection() {
+  if (!canvas) return;
+  const cw = canvas.width / devicePixelRatio;
+  const ch = canvas.height / devicePixelRatio;
+  projectionMatrix = new CubismMatrix44();
+  // Same pattern as Open-LLM-VTuber onUpdate()
+  if (cw < ch) {
+    projectionMatrix.scale(1.0, cw / ch);
+  } else {
+    projectionMatrix.scale(ch / cw, 1.0);
+  }
 }
 
 // ── Helpers ────────────────────────────────────────────
@@ -387,14 +500,17 @@ function setupLayout(matrix, modelWidth, modelHeight) {
   const canvasW = canvas.width / devicePixelRatio;
   const canvasH = canvas.height / devicePixelRatio;
 
-  // Scale model to fit canvas height, centered horizontally
-  const scale = canvasH / modelHeight;
-  const scaledW = modelWidth * scale;
+  // CubismModelMatrix already has Y-flip from constructor (scaleY = -w/width).
+  // Just adjust scale to fit canvas height and center horizontally.
+  // Do NOT call loadIdentity() — it destroys the Y-flip.
+  const scale = canvasH / (modelHeight || 1);
+  const scaledW = (modelWidth || 1) * scale;
   const offsetX = (canvasW - scaledW) / 2;
 
-  matrix.loadIdentity?.();
-  matrix.scale?.(scale, scale);
-  matrix.translate?.(offsetX / scale, 0);
+  matrix.scale(scale, scale);
+  matrix.translateRelative(offsetX / scale, 0);
+
+  console.log('[live2d-scene] Layout: scale=', scale.toFixed(1), 'offsetX=', offsetX.toFixed(1));
 }
 
 // ── Background ─────────────────────────────────────────

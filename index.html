@@ -67,6 +67,46 @@
   <!-- Path: lib/CubismSdkForWeb-5-r.1/Core/live2dcubismcore.min.js -->
   <script src="lib/CubismSdkForWeb-5-r.1/Core/live2dcubismcore.min.js"></script>
 
+  <!-- Fix: Core 5.1.0 doesn't export ColorBlendType_* / AlphaBlendType_* constants
+       but Framework 5-r.1 enum init expects them. Define before Framework module loads. -->
+  <script>
+  (function() {
+    // ColorBlendType — used by CubismColorBlend enum
+    Live2DCubismCore.ColorBlendType_Normal = 0;
+    Live2DCubismCore.ColorBlendType_AddGlow = 1;
+    Live2DCubismCore.ColorBlendType_Add = 2;
+    Live2DCubismCore.ColorBlendType_Darken = 3;
+    Live2DCubismCore.ColorBlendType_Multiply = 4;
+    Live2DCubismCore.ColorBlendType_ColorBurn = 5;
+    Live2DCubismCore.ColorBlendType_LinearBurn = 6;
+    Live2DCubismCore.ColorBlendType_Lighten = 7;
+    Live2DCubismCore.ColorBlendType_Screen = 8;
+    Live2DCubismCore.ColorBlendType_ColorDodge = 9;
+    Live2DCubismCore.ColorBlendType_Overlay = 10;
+    Live2DCubismCore.ColorBlendType_SoftLight = 11;
+    Live2DCubismCore.ColorBlendType_HardLight = 12;
+    Live2DCubismCore.ColorBlendType_LinearLight = 13;
+    Live2DCubismCore.ColorBlendType_Hue = 14;
+    Live2DCubismCore.ColorBlendType_Color = 15;
+    Live2DCubismCore.ColorBlendType_AddCompatible = 16;
+    Live2DCubismCore.ColorBlendType_MultiplyCompatible = 17;
+
+    // 🔬 Intercept fetch for shader diagnostics
+    const origFetch = window.fetch;
+    window.fetch = function(url, ...args) {
+      const urlStr = typeof url === 'string' ? url : (url.url || String(url));
+      if (urlStr.includes('shader') || urlStr.includes('.vert') || urlStr.includes('.frag')) {
+        console.log('[shader-fetch] REQ', urlStr);
+        return origFetch.call(this, url, ...args).then(resp => {
+          console.log('[shader-fetch] RES', urlStr, resp.status, resp.ok ? 'OK' : 'FAIL');
+          return resp;
+        });
+      }
+      return origFetch.call(this, url, ...args);
+    };
+  })();
+  </script>
+
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

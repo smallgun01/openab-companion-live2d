@@ -25,3 +25,6 @@ models/Haru/
 
 # JellyFishGirl model (custom — not for public distribution)
 models/jellyfish-girl/
+forger-family-live2d.tar.gz
+shaders/
+lib/CubismFramework/
