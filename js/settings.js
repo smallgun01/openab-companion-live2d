@@ -12,6 +12,7 @@ const DEFAULTS = {
   endpoint: 'http://localhost:8080/v1/chat/completions',
   token: '',
   bgColor: '#1a1a2e',
+  bgImage: '',
 };
 
 /* ── Settings (localStorage) ──────────────────────────── */

@@ -9,7 +9,7 @@ import { sendMessage } from './chat.js';
 import { getSettings, saveSettings } from './settings.js';
 
 // Dynamic imports — Live2D module may fail (SDK not set up); chat always works
-let initScene, loadModel, setBackgroundColor, hasParameters;
+let initScene, setParameter, setBackgroundColor, hasParameters, getModel, dispose, getLastInitError;
 let live2dAvailable = false;
 let live2dErrorMsg = '';
 
@@ -17,15 +17,21 @@ const live2dReady = (async () => {
   try {
     const mod = await import('./live2d-scene.js');
     initScene = mod.initScene;
-    loadModel = mod.loadModel;
+    setParameter = mod.setParameter;
     setBackgroundColor = mod.setBackgroundColor;
     hasParameters = mod.hasParameters;
+    getModel = mod.getModel;
+    dispose = mod.dispose;
+    getLastInitError = mod.getLastInitError;
     live2dAvailable = true;
   } catch (err) {
     live2dErrorMsg = err.message || String(err);
     console.warn('Live2D scene unavailable:', live2dErrorMsg);
     setBackgroundColor = () => {};
     hasParameters = () => false;
+    getModel = () => null;
+    dispose = () => {};
+    setParameter = () => {};
   }
 })();
 
@@ -59,6 +65,11 @@ const statusText     = document.getElementById('status-text');
 const messagesEl     = document.getElementById('messages');
 const chatInput      = document.getElementById('chat-input');
 const sendBtn        = document.getElementById('send-btn');
+const chatPanel       = document.getElementById('chat-panel');
+const chatToggle      = document.getElementById('chat-toggle');
+const chatCloseBtn    = document.getElementById('chat-close-btn');
+const speechBubble    = document.getElementById('speech-bubble');
+const speechBubbleText = document.getElementById('speech-bubble-text');
 const settingsOverlay   = document.getElementById('settings-overlay');
 const settingsBtn    = document.getElementById('settings-btn');
 const settingsClose  = document.getElementById('settings-close');
@@ -76,30 +87,26 @@ async function init() {
     // Wait for Live2D module to load (or fail)
     await live2dReady;
 
-    // Live2D Scene
+    // Live2D Scene — initScene now handles everything internally
     if (live2dAvailable && initScene) {
-      const ok = initScene(canvas, settings.bgColor);
+      const ok = await initScene(canvas, {
+        bgColor: settings.bgColor,
+        bgImage: settings.bgImage || '',
+        transparent: window.__JELLII_DESKTOP__ === true,
+      });
       if (ok) {
-        // Load default model
-        const loaded = await loadModel('models/jellyfish-girl/');
-        if (loaded) {
-          modelPrompt.classList.add('hidden');
-          setStatus('connected', 'Ready');
+        modelPrompt.classList.add('hidden');
+        setStatus('connected', 'Ready');
 
-          // Start idle animations after model is loaded
-          await animReady;
-          if (startIdleAnimations) startIdleAnimations();
-        } else {
-          modelPrompt.classList.remove('hidden');
-          const p = modelPrompt.querySelector('p');
-          if (p) p.textContent = '⚠️ Failed to load model. Is models/jellyfish-girl/ set up?';
-          setStatus('error', 'Model load failed');
-        }
+        // Start idle animations after model is loaded
+        await animReady;
+        if (startIdleAnimations) startIdleAnimations();
       } else {
         modelPrompt.classList.remove('hidden');
         const p = modelPrompt.querySelector('p');
-        if (p) p.textContent = '⚠️ Cubism SDK not set up. Run `bash lib/setup.sh` and reload.';
-        setStatus('error', 'SDK init failed');
+        const detail = getLastInitError?.() || 'Unknown renderer error';
+        if (p) p.textContent = `⚠️ Failed to load model: ${detail}`;
+        setStatus('error', 'Model load failed');
       }
     } else {
       // Live2D unavailable — show friendly placeholder
@@ -143,12 +150,21 @@ function wireEvents() {
     if (e.target === settingsOverlay) settingsOverlay.classList.remove('open');
   });
   saveSettingsBtn.addEventListener('click', handleSaveSettings);
+
+  if (window.__JELLII_DESKTOP__) {
+    setChatPanelOpen(false);
+    chatToggle.addEventListener('click', () => setChatPanelOpen(true));
+    chatCloseBtn.addEventListener('click', () => setChatPanelOpen(false));
+    speechBubble.addEventListener('click', () => setChatPanelOpen(true));
+    speechBubble.addEventListener('mouseenter', pauseSpeechBubble);
+    speechBubble.addEventListener('mouseleave', resumeSpeechBubble);
+  }
 }
 
 /* ── Message Handling ─────────────────────────────────── */
 
 async function handleSend(textOverride) {
-  const text = textOverride || chatInput.value.trim();
+  const text = typeof textOverride === 'string' ? textOverride : chatInput.value.trim();
   if (!text || isStreaming) return;
 
   if (!textOverride) {
@@ -165,6 +181,8 @@ async function handleSend(textOverride) {
   sendBtn.disabled = true;
   retryCount = 0;
   setStatus('connected', 'Typing…');
+  latestSpeechBubble = null;
+  showSpeechBubble('…', 'thinking', { persistent: true });
 
   const abort = new AbortController();
   streamingAbort = abort;
@@ -179,23 +197,24 @@ async function handleSend(textOverride) {
     signal: abort.signal,
     onChunk(delta) {
       fullText += delta;
-      contentSpan.textContent = fullText;
+      // Strip tags AND apply expression; show clean text
+      const cleaned = parseAndApply(fullText);
+      contentSpan.textContent = cleaned;
 
-      // Apply expression on new text chunks (~every 20 chars)
       if (fullText.length - lastExpressionCheck.length > 20) {
-        parseAndApply(fullText);
         lastExpressionCheck = fullText;
       }
       scrollBottom();
     },
     onDone() {
-      // Final expression parse
+      // Final expression parse + strip any remaining tags
       const cleaned = parseAndApply(fullText);
       contentSpan.textContent = cleaned;
 
       cursorSpan?.remove();
       assistantBubble.classList.remove('streaming');
       finishStream();
+      if (cleaned.trim()) showSpeechBubble(cleaned, 'reply');
       setStatus('connected', 'Ready');
     },
     onError(code, msg) {
@@ -212,8 +231,10 @@ async function handleSend(textOverride) {
 
       if (code === 429) {
         addBubble('error', '⚠️ Server busy. Please try again later.');
+        showSpeechBubble('Server busy. Try again shortly.', 'error');
       } else {
         addBubble('error', `Error (${code}): ${msg}`);
+        showSpeechBubble('Connection failed. Open chat for details.', 'error');
       }
       setStatus('error', code ? `Error ${code}` : 'Disconnected');
     },
@@ -224,7 +245,80 @@ function finishStream() {
   isStreaming = false;
   sendBtn.disabled = false;
   streamingAbort = null;
-  chatInput.focus();
+  // A collapsed desktop drawer is translated off-screen. Focusing its input
+  // makes Chromium scroll the #app overflow container to reveal that input,
+  // which moves the Live2D canvas out of the viewport. Keep focus only while
+  // the drawer is actually visible.
+  if (!window.__JELLII_DESKTOP__ || !app.classList.contains('chat-collapsed')) {
+    chatInput.focus();
+  }
+}
+
+/* ── Desktop chat / speech bubble ─────────────────────── */
+
+let speechBubbleTimer = null;
+let speechBubbleRemainingMs = 0;
+let speechBubbleStartedAt = 0;
+let speechBubblePersistent = false;
+let latestSpeechBubble = null;
+
+function setChatPanelOpen(open) {
+  if (!window.__JELLII_DESKTOP__) return;
+  app.classList.toggle('chat-collapsed', !open);
+  if (!open) {
+    // Prevent an already-focused, now off-screen input from retaining a
+    // horizontal scroll offset on the desktop surface.
+    if (chatPanel.contains(document.activeElement)) document.activeElement.blur();
+    app.scrollLeft = 0;
+  }
+  chatToggle.setAttribute('aria-expanded', String(open));
+  chatToggle.setAttribute('aria-label', open ? 'Chat is open' : 'Open chat');
+  chatToggle.hidden = open;
+  if (open) hideSpeechBubble();
+  if (!open && latestSpeechBubble) {
+    showSpeechBubble(latestSpeechBubble.text, latestSpeechBubble.kind);
+  }
+  if (open) setTimeout(() => chatInput.focus(), 180);
+}
+
+function showSpeechBubble(text, kind = 'reply', { persistent = false } = {}) {
+  if (!window.__JELLII_DESKTOP__) return;
+  if (!persistent) latestSpeechBubble = { text, kind };
+  if (!app.classList.contains('chat-collapsed')) return;
+  clearSpeechBubbleTimer();
+  speechBubblePersistent = persistent;
+  speechBubbleText.textContent = text;
+  speechBubble.className = `speech-bubble ${kind}`;
+  speechBubble.hidden = false;
+  if (!persistent) {
+    speechBubbleRemainingMs = 10000;
+    speechBubbleStartedAt = performance.now();
+    speechBubbleTimer = setTimeout(() => hideSpeechBubble({ forget: true }), speechBubbleRemainingMs);
+  }
+}
+
+function hideSpeechBubble({ forget = false } = {}) {
+  clearSpeechBubbleTimer();
+  speechBubble.hidden = true;
+  speechBubblePersistent = false;
+  if (forget) latestSpeechBubble = null;
+}
+
+function clearSpeechBubbleTimer() {
+  if (speechBubbleTimer) clearTimeout(speechBubbleTimer);
+  speechBubbleTimer = null;
+}
+
+function pauseSpeechBubble() {
+  if (speechBubblePersistent || !speechBubbleTimer) return;
+  speechBubbleRemainingMs -= performance.now() - speechBubbleStartedAt;
+  clearSpeechBubbleTimer();
+}
+
+function resumeSpeechBubble() {
+  if (speechBubblePersistent || speechBubbleTimer || speechBubbleRemainingMs <= 0) return;
+  speechBubbleStartedAt = performance.now();
+  speechBubbleTimer = setTimeout(() => hideSpeechBubble({ forget: true }), speechBubbleRemainingMs);
 }
 
 /* ── Bubble Helpers ───────────────────────────────────── */
@@ -286,3 +380,6 @@ function setStatus(state, msg) {
 /* ── Start ────────────────────────────────────────────── */
 
 document.addEventListener('DOMContentLoaded', init);
+
+// Debug: expose live2d internals for browser console testing
+window.__l2d = async () => { const m = await import('./live2d-scene.js'); return m.__debug(); };

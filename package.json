@@ -1,0 +1,13 @@
+{
+  "name": "openab-companion-live2d",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev:web": "node dev-server.mjs",
+    "dev:electron": "electron electron/main.cjs",
+    "build:desktop-assets": "node scripts/build-desktop-assets.mjs"
+  },
+  "devDependencies": {
+    "electron": "^43.1.1"
+  }
+}

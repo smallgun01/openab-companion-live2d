@@ -11,7 +11,7 @@
  */
 
 import { setParameter, getParameter, hasParameters } from './live2d-scene.js';
-import { isExpressionActive, getExpressionParamKeys } from './expression.js';
+import { isExpressionActive, getExpressionParamKeys, tickExpressionDynamic } from './expression.js';
 
 // ── Configuration ──────────────────────────────────────
 // ⚠️ Angle parameters (ParamAngleX, ParamBodyAngleX) use degree-scale values
@@ -54,6 +54,11 @@ export function startIdleAnimations() {
 
   idleActive = true;
   idleStartTime = performance.now();
+
+  // Ensure eyes start open (model defaults to 0 = closed)
+  setParameter('ParamEyeLOpen', 1);
+  setParameter('ParamEyeROpen', 1);
+
   scheduleNextBlink();
   idleRAF = requestAnimationFrame(tick);
   console.log('[live2d-anim] Idle animations started');
@@ -130,6 +135,9 @@ function tick(now) {
     const headPhase = (elapsed % HEAD_SWAY_PERIOD_S) / HEAD_SWAY_PERIOD_S;
     setParameter('ParamAngleX', Math.sin(headPhase * Math.PI * 2) * HEAD_SWAY_AMPLITUDE);
   }
+
+  // ── Expression dynamic oscillation (head sway, body rock, etc.) ──
+  tickExpressionDynamic(now);
 
   // ── Blink (eye open/close yields to expression on those params) ──
   if (!exprKeys.has('ParamEyeLOpen') && !exprKeys.has('ParamEyeROpen')) {

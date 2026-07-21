@@ -8,6 +8,31 @@
  * - Serves static files from current directory (index.html, css/, js/, models/)
  * - Proxies /v1/* requests to OPENAB_GATEWAY with CORS headers
  * - No need for `npx serve` or separate terminals
+ *
+ * ─────────────────────────────────────────────────────────────────
+ * Configuring the LLM endpoint
+ * ─────────────────────────────────────────────────────────────────
+ *
+ * 99% of the time, you DON'T need to touch OPENAB_GATEWAY:
+ *
+ *   1. Run:  node dev-server.mjs
+ *   2. Open: http://localhost:8011
+ *   3. Click ⚙️ in the header → Settings panel
+ *   4. Fill in:
+ *        - OpenAB Endpoint URL (e.g. https://your-gateway/v1/chat/completions)
+ *        - Bearer Token (optional)
+ *   5. Save. Settings persist in browser localStorage — no env needed.
+ *
+ * OPENAB_GATEWAY env var is for power users only (CI, containers, multi-env):
+ *
+ *   OPENAB_GATEWAY=staging-gateway.example.com node dev-server.mjs
+ *
+ * When set, it overrides the *default* proxy target — but the Settings panel
+ * input always wins at runtime (per-session, per-browser).
+ *
+ * If you skip OPENAB_GATEWAY entirely, the default placeholder
+ * 'your-gateway.example.com' is used. Browser requests will fail until you
+ * configure the real endpoint via ⚙️ Settings.
  */
 import http from 'node:http';
 import https from 'node:https';
