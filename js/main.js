@@ -4,7 +4,7 @@
  * Adapts the VRM companion (openab-companion) architecture to Live2D Cubism SDK.
  * chat.js / settings.js / dev-server.mjs are shared; rendering layer is replaced.
  */
-import { parseAndApply, getLastEmotion } from './expression.js';
+import { applyExpression, parseAndApply } from './expression.js';
 import { sendMessage } from './chat.js';
 import { getSettings, saveSettings } from './settings.js';
 
@@ -70,6 +70,10 @@ const chatToggle      = document.getElementById('chat-toggle');
 const chatCloseBtn    = document.getElementById('chat-close-btn');
 const speechBubble    = document.getElementById('speech-bubble');
 const speechBubbleText = document.getElementById('speech-bubble-text');
+const quickCompose    = document.getElementById('quick-compose');
+const quickInput      = document.getElementById('quick-input');
+const quickSendBtn    = document.getElementById('quick-send-btn');
+const historyBtn      = document.getElementById('history-btn');
 const settingsOverlay   = document.getElementById('settings-overlay');
 const settingsBtn    = document.getElementById('settings-btn');
 const settingsClose  = document.getElementById('settings-close');
@@ -152,10 +156,17 @@ function wireEvents() {
   saveSettingsBtn.addEventListener('click', handleSaveSettings);
 
   if (window.__JELLII_DESKTOP__) {
-    setChatPanelOpen(false);
-    chatToggle.addEventListener('click', () => setChatPanelOpen(true));
-    chatCloseBtn.addEventListener('click', () => setChatPanelOpen(false));
-    speechBubble.addEventListener('click', () => setChatPanelOpen(true));
+    chatToggle.addEventListener('click', () => setQuickComposeOpen(true));
+    speechBubble.addEventListener('click', () => window.jelliiDesktop?.openHistory());
+    quickSendBtn.addEventListener('click', handleQuickSend);
+    quickInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleQuickSend(); }
+      if (e.key === 'Escape') setQuickComposeOpen(false);
+    });
+    historyBtn.addEventListener('click', () => window.jelliiDesktop?.openHistory());
+    window.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.code === 'Space') { e.preventDefault(); setQuickComposeOpen(true); }
+    });
     speechBubble.addEventListener('mouseenter', pauseSpeechBubble);
     speechBubble.addEventListener('mouseleave', resumeSpeechBubble);
   }
@@ -182,6 +193,9 @@ async function handleSend(textOverride) {
   retryCount = 0;
   setStatus('connected', 'Typing…');
   latestSpeechBubble = null;
+  // SSE exposes no tool/reasoning event. This truthfully means only that the
+  // request is pending; a Jellii tag replaces it when response text arrives.
+  applyExpression('thinking');
   showSpeechBubble('…', 'thinking', { persistent: true });
 
   const abort = new AbortController();
@@ -209,7 +223,9 @@ async function handleSend(textOverride) {
     onDone() {
       // Final expression parse + strip any remaining tags
       const cleaned = parseAndApply(fullText);
+      if (!hasModelEmotionTag(fullText)) applyExpression('neutral');
       contentSpan.textContent = cleaned;
+      if (cleaned.trim()) persistHistory('assistant', cleaned);
 
       cursorSpan?.remove();
       assistantBubble.classList.remove('streaming');
@@ -221,6 +237,7 @@ async function handleSend(textOverride) {
       cursorSpan?.remove();
       assistantBubble.classList.remove('streaming');
       finishStream();
+      applyExpression('neutral');
 
       if (code === 429 && retryCount < MAX_RETRIES) {
         retryCount++;
@@ -241,17 +258,15 @@ async function handleSend(textOverride) {
   });
 }
 
+function hasModelEmotionTag(text) {
+  return /\[(joy|sadness|anger|surprise|fear|disgust|smirk|neutral)\]/i.test(text);
+}
+
 function finishStream() {
   isStreaming = false;
   sendBtn.disabled = false;
   streamingAbort = null;
-  // A collapsed desktop drawer is translated off-screen. Focusing its input
-  // makes Chromium scroll the #app overflow container to reveal that input,
-  // which moves the Live2D canvas out of the viewport. Keep focus only while
-  // the drawer is actually visible.
-  if (!window.__JELLII_DESKTOP__ || !app.classList.contains('chat-collapsed')) {
-    chatInput.focus();
-  }
+  if (!window.__JELLII_DESKTOP__) chatInput.focus();
 }
 
 /* ── Desktop chat / speech bubble ─────────────────────── */
@@ -262,29 +277,27 @@ let speechBubbleStartedAt = 0;
 let speechBubblePersistent = false;
 let latestSpeechBubble = null;
 
-function setChatPanelOpen(open) {
+function setQuickComposeOpen(open) {
   if (!window.__JELLII_DESKTOP__) return;
-  app.classList.toggle('chat-collapsed', !open);
-  if (!open) {
-    // Prevent an already-focused, now off-screen input from retaining a
-    // horizontal scroll offset on the desktop surface.
-    if (chatPanel.contains(document.activeElement)) document.activeElement.blur();
-    app.scrollLeft = 0;
-  }
   chatToggle.setAttribute('aria-expanded', String(open));
-  chatToggle.setAttribute('aria-label', open ? 'Chat is open' : 'Open chat');
+  chatToggle.setAttribute('aria-label', open ? 'Quick input is open' : 'Talk to JellyFish Girl');
   chatToggle.hidden = open;
-  if (open) hideSpeechBubble();
-  if (!open && latestSpeechBubble) {
-    showSpeechBubble(latestSpeechBubble.text, latestSpeechBubble.kind);
-  }
-  if (open) setTimeout(() => chatInput.focus(), 180);
+  quickCompose.hidden = !open;
+  if (open) setTimeout(() => quickInput.focus(), 0);
+}
+
+function handleQuickSend() {
+  const text = quickInput.value.trim();
+  if (!text || isStreaming) return;
+  quickInput.value = '';
+  quickInput.style.height = 'auto';
+  setQuickComposeOpen(false);
+  handleSend(text);
 }
 
 function showSpeechBubble(text, kind = 'reply', { persistent = false } = {}) {
   if (!window.__JELLII_DESKTOP__) return;
   if (!persistent) latestSpeechBubble = { text, kind };
-  if (!app.classList.contains('chat-collapsed')) return;
   clearSpeechBubbleTimer();
   speechBubblePersistent = persistent;
   speechBubbleText.textContent = text;
@@ -339,8 +352,21 @@ function addBubble(role, content = '', streaming = false) {
     el.textContent = content;
   }
   messagesEl.appendChild(el);
+  if (!streaming) persistHistory(role, content);
   scrollBottom();
   return el;
+}
+
+function persistHistory(role, content) {
+  if (!window.__JELLII_DESKTOP__ || !content) return;
+  try {
+    const key = 'jellii-companion-history-v1';
+    const entries = JSON.parse(localStorage.getItem(key) || '[]');
+    entries.push({ role, content, at: Date.now() });
+    localStorage.setItem(key, JSON.stringify(entries.slice(-300)));
+  } catch (err) {
+    console.warn('Unable to persist conversation history:', err);
+  }
 }
 
 function scrollBottom() {
@@ -367,6 +393,11 @@ function handleSaveSettings() {
 function enableChat() {
   chatInput.disabled = false;
   sendBtn.disabled = false;
+  if (window.__JELLII_DESKTOP__) {
+    quickInput.disabled = false;
+    quickSendBtn.disabled = false;
+    setQuickComposeOpen(false);
+  }
   chatInput.placeholder = 'Type a message…';
 }
 

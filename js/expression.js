@@ -37,6 +37,35 @@ import { setParameter, getParameter, hasParameters } from './live2d-scene.js';
 // ⚠️ Angle parameters (ParamAngleX/Y/Z, ParamBodyAngleX/Y/Z) use degree-scale
 // values, NOT 0-1. Do NOT clamp these in setParameter.
 
+// Every expression starts from this complete, neutral baseline.  Emotion
+// entries below only describe their deltas, so a prior expression can never
+// leak cheeks, brows, head angle, or mouth state into the next one.
+const NEUTRAL_BASELINE = {
+  ParamEyeLOpen: 1.0,
+  ParamEyeROpen: 1.0,
+  ParamEyeLSmile: 0.0,
+  ParamEyeRSmile: 0.0,
+  ParamEyeBallX: 0.0,
+  ParamEyeBallY: 0.0,
+  ParamBrowLY: 0.0,
+  ParamBrowRY: 0.0,
+  ParamBrowLX: 0.0,
+  ParamBrowRX: 0.0,
+  ParamBrowLAngle: 0.0,
+  ParamBrowRAngle: 0.0,
+  ParamBrowLForm: 0.0,
+  ParamBrowRForm: 0.0,
+  ParamMouthForm: 0.2,
+  ParamMouthOpenY: 0.0,
+  ParamCheek: 0.0,
+  ParamAngleX: 0.0,
+  ParamAngleY: 0.0,
+  ParamAngleZ: 0.0,
+  ParamBodyAngleX: 0.0,
+  ParamBodyAngleY: 0.0,
+  ParamBodyAngleZ: 0.0,
+};
+
 export const EMOTION_MAP = {
   // ── Active (Jellii bot output) ──
   // Calibrated 2026-07-14: human-expression reference, JellyFish Girl ranges.
@@ -50,17 +79,17 @@ export const EMOTION_MAP = {
 
   joy: {
     static: {
-      // Eyes: crescent smile (Duchenne smile = orbicularis oculi contraction)
+      // Arthur's preferred joy: fully open eyes plus maximum eye-smile.
       ParamEyeLSmile: 1.0,
       ParamEyeRSmile: 1.0,
-      ParamEyeLOpen: 0.75,       // slight squint — genuine smile narrows eyes
-      ParamEyeROpen: 0.75,
+      ParamEyeLOpen: 1.0,
+      ParamEyeROpen: 1.0,
       // Brows: relaxed-neutral, very slight lift
       ParamBrowLAngle: 0.15,
       ParamBrowRAngle: 0.15,
-      // Mouth: broad smile, slightly open
-      ParamMouthForm: 0.85,
-      ParamMouthOpenY: 0.15,
+      // Mouth: maximum smile and opening
+      ParamMouthForm: 1.0,
+      ParamMouthOpenY: 1.0,
       // Cheeks: rosy flush
       ParamCheek: 0.5,
       // Body: subtle bounce-ready posture
@@ -210,42 +239,43 @@ export const EMOTION_MAP = {
       ParamMouthForm: 0.45,
       ParamMouthOpenY: 0.0,
       // Head: slight sideways tilt
-      ParamAngleZ: -12.0,
+      ParamAngleZ: -6.0,
       // Body: slight lean (confident posture)
       ParamBodyAngleX: 3.0,
     },
     dynamic: {
-      // Subtle head bob (like a soft chuckle)
-      ParamAngleZ: [14, 3.5, 0],
+      // A restrained, knowing tilt — not a pendulum.
+      ParamAngleZ: [2.5, 4.5, 0],
+    },
+  },
+
+  // UI state, not a model-emitted emotion tag.  The client enters this while
+  // a request is pending and hands control back to Jellii as soon as its tag
+  // arrives in the response.
+  thinking: {
+    static: {
+      ParamEyeLOpen: 0.85,
+      ParamEyeROpen: 0.85,
+      ParamEyeBallX: 0.35,
+      ParamEyeBallY: 0.30,
+      ParamBrowLY: 0.18,
+      ParamBrowRY: 0.34,
+      ParamBrowLAngle: 0.10,
+      ParamBrowRAngle: 0.20,
+      ParamMouthForm: 0.10,
+      ParamMouthOpenY: 0.05,
+      ParamAngleZ: -2.0,
+    },
+    dynamic: {
+      // A slow gaze scan and small head tilt: reading, not anxiety.
+      ParamEyeBallX: [0.10, 4.5, 0],
+      ParamAngleZ: [2.0, 5.2, 0.15],
     },
   },
 
   neutral: {
     static: {
-      // Full reset to default model state
-      ParamEyeLOpen: 1.0,
-      ParamEyeROpen: 1.0,
-      ParamEyeLSmile: 0.0,
-      ParamEyeRSmile: 0.0,
-      ParamEyeBallX: 0.0,
-      ParamEyeBallY: 0.0,
-      ParamBrowLY: 0.0,
-      ParamBrowRY: 0.0,
-      ParamBrowLX: 0.0,
-      ParamBrowRX: 0.0,
-      ParamBrowLAngle: 0.0,
-      ParamBrowRAngle: 0.0,
-      ParamBrowLForm: 0.0,
-      ParamBrowRForm: 0.0,
-      ParamMouthForm: 1.0,       // gentle upturned smile — approachable default
-      ParamMouthOpenY: 0.0,
-      ParamCheek: 0.0,
-      ParamAngleX: 0.0,
-      ParamAngleY: 0.0,
-      ParamAngleZ: 0.0,
-      ParamBodyAngleX: 0.0,
-      ParamBodyAngleY: 0.0,
-      ParamBodyAngleZ: 0.0,
+      // The complete reset lives in NEUTRAL_BASELINE.
     },
   },
 
@@ -298,6 +328,7 @@ let lerpFrom = {};
 let lerpTo = {};
 let lerpActiveParamKeys = new Set();  // params currently being driven by expression
 let currentEmotion = null;            // currently active emotion key (for dynamic tick)
+let currentStaticTargets = {};
 const LERP_MS = 300;
 
 let lastEmotionKey = 'neutral';
@@ -330,7 +361,7 @@ export function tickExpressionDynamic(nowMs) {
   const dyn = entry.dynamic;
   for (const param of Object.keys(dyn)) {
     const [amplitude, periodS, phaseOffset = 0] = dyn[param];
-    const staticVal = (entry.static && entry.static[param]) ?? getParameter(param);
+    const staticVal = currentStaticTargets[param] ?? NEUTRAL_BASELINE[param] ?? getParameter(param);
     const phase = ((nowMs / 1000) / periodS + phaseOffset) * Math.PI * 2;
     const value = staticVal + Math.sin(phase) * amplitude;
     setParameter(param, value);
@@ -359,11 +390,20 @@ export function parseAndApply(text) {
     return cleaned;
   }
 
-  const entry = EMOTION_MAP[emotionKey] || EMOTION_MAP.neutral;
-  const targetWeights = entry.static || entry;
+  applyExpression(emotionKey);
+  return cleaned;
+}
 
-  console.log('[expression] tag →', emotionKey, 'static keys:', Object.keys(targetWeights).join(', '));
-  lastEmotionKey = emotionKey;
+/** Apply a client or model expression by key. */
+export function applyExpression(emotionKey) {
+  if (!hasParameters()) return;
+
+  const key = EMOTION_MAP[emotionKey] ? emotionKey : 'neutral';
+  const entry = EMOTION_MAP[key] || EMOTION_MAP.neutral;
+  const targetWeights = { ...NEUTRAL_BASELINE, ...(entry.static || entry) };
+
+  console.log('[expression] state →', key, 'static keys:', Object.keys(targetWeights).join(', '));
+  lastEmotionKey = key;
 
   if (lerpRAF) cancelAnimationFrame(lerpRAF);
 
@@ -372,12 +412,12 @@ export function parseAndApply(text) {
     lerpFrom[key] = getParameter(key);
   }
   lerpTo = { ...targetWeights };
+  currentStaticTargets = { ...targetWeights };
   lerpActiveParamKeys = new Set(Object.keys(lerpTo));
-  currentEmotion = emotionKey === 'neutral' ? null : emotionKey;
+  currentEmotion = key === 'neutral' ? null : key;
   lerpStart = performance.now();
 
   tickLerp();
-  return cleaned;
 }
 
 // ── Parameter lerp ─────────────────────────────────────
@@ -399,6 +439,9 @@ function tickLerp() {
     lerpRAF = requestAnimationFrame(tickLerp);
   } else {
     lerpRAF = null;
-    lerpActiveParamKeys = new Set();
+    // Keep idle animation from overwriting a held expression base. Dynamic
+    // motion is then applied around currentStaticTargets, never around the
+    // previous frame's value.
+    lerpActiveParamKeys = currentEmotion ? new Set(Object.keys(lerpTo)) : new Set();
   }
 }

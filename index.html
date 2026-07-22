@@ -15,7 +15,12 @@
       <div id="speech-bubble" class="speech-bubble" role="status" aria-live="polite" aria-atomic="true" hidden>
         <span id="speech-bubble-text"></span>
       </div>
-      <button id="chat-toggle" class="desktop-control" type="button" title="Open chat" aria-label="Open chat" aria-expanded="false">💬</button>
+      <button id="chat-toggle" class="desktop-control" type="button" title="Talk to JellyFish Girl" aria-label="Talk to JellyFish Girl" aria-expanded="false">💬</button>
+      <div id="quick-compose" hidden>
+        <textarea id="quick-input" rows="1" placeholder="Talk to JellyFish Girl…" disabled></textarea>
+        <button id="quick-send-btn" type="button" title="Send message" aria-label="Send message" disabled>▶</button>
+        <button id="history-btn" type="button" title="Open conversation history" aria-label="Open conversation history">☷</button>
+      </div>
       <div id="model-prompt">
         <p>🎭 Loading JellyFish Girl…</p>
       </div>

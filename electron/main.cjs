@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const { spawn } = require('node:child_process');
 const http = require('node:http');
 const path = require('node:path');
@@ -9,6 +9,8 @@ const PORT = 8011;
 // would otherwise point at Electron and spawn a second Chromium application.
 const NODE_EXECUTABLE = process.env.npm_node_execpath || process.execPath;
 let proxyProcess;
+let petWindow;
+let historyWindow;
 
 function serverIsReady() {
   return new Promise((resolve) => {
@@ -46,7 +48,7 @@ async function ensureLocalServer() {
 async function createWindow() {
   await ensureLocalServer();
 
-  const window = new BrowserWindow({
+  petWindow = new BrowserWindow({
     width: 420,
     height: 720,
     minWidth: 420,
@@ -56,18 +58,27 @@ async function createWindow() {
     alwaysOnTop: true,
     backgroundColor: '#00000000',
     webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
   });
 
-  await window.loadURL(`http://127.0.0.1:${PORT}/`);
+  await petWindow.loadURL(`http://127.0.0.1:${PORT}/`);
   // Desktop pet: prefer the strongest standard Electron layer over normal apps.
-  window.setAlwaysOnTop(true, 'screen-saver');
-  window.setVisibleOnAllWorkspaces(true);
-  console.log('[electron] always-on-top:', window.isAlwaysOnTop());
+  petWindow.setAlwaysOnTop(true, 'screen-saver');
+  petWindow.setVisibleOnAllWorkspaces(true);
+  console.log('[electron] always-on-top:', petWindow.isAlwaysOnTop());
 }
+
+ipcMain.handle('companion:open-history', async () => {
+  await ensureLocalServer();
+  if (historyWindow && !historyWindow.isDestroyed()) { historyWindow.show(); historyWindow.focus(); return; }
+  historyWindow = new BrowserWindow({ width: 460, height: 640, minWidth: 360, minHeight: 420, title: 'JellyFish Girl — Conversation history', backgroundColor: '#10182d', webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  historyWindow.on('closed', () => { historyWindow = null; });
+  await historyWindow.loadURL(`http://127.0.0.1:${PORT}/history.html`);
+});
 
 app.whenReady().then(createWindow).catch((error) => {
   console.error('[electron] startup failed:', error);
