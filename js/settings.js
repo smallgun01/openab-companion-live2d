@@ -1,7 +1,10 @@
 /**
- * settings.js — localStorage persistence for endpoint, token, background color.
+ * settings.js — localStorage persistence for non-secret display settings.
  *
  *   getSettings() / saveSettings(obj) → localStorage
+ *
+ * Bearer tokens intentionally never enter localStorage. They remain in memory
+ * for the current app session and must be re-entered after a restart.
  *
  * MVP: no IndexedDB model storage (Live2D models are multi-file directories,
  * not single .vrm files). Model path is hard-coded in live2d-scene.js.
@@ -21,15 +24,28 @@ const DEFAULTS = {
 export function getSettings() {
   const raw = localStorage.getItem('openab-settings');
   const saved = raw ? safeParse(raw) : {};
-  return { ...DEFAULTS, ...saved };
+  return { ...DEFAULTS, ...saved, token: '' };
 }
 
 /** Save a partial or full settings object. */
 export function saveSettings(partial) {
+  if (partial.endpoint && !isAllowedEndpoint(partial.endpoint)) {
+    throw new Error('Endpoint must use HTTPS, or HTTP only for localhost.');
+  }
   const current = getSettings();
-  const merged = { ...current, ...partial };
+  const { token: _token, ...nonSecret } = partial;
+  const merged = { ...current, ...nonSecret };
+  delete merged.token;
   removeUndefined(merged);
   localStorage.setItem('openab-settings', JSON.stringify(merged));
+}
+
+export function isAllowedEndpoint(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'https:') return true;
+    return url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  } catch { return false; }
 }
 
 /* ── Helpers ──────────────────────────────────────────── */

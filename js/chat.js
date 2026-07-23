@@ -7,6 +7,12 @@
 // SSE field-line parser: matches data:, event:, id:, retry: prefixes
 const SSE_FIELD_RE = /^(data|event|id|retry):\s*(.*)$/i;
 
+export function parseSseDataLine(line) {
+  const match = line.trim().match(SSE_FIELD_RE);
+  if (!match || match[1].toLowerCase() !== 'data' || match[2] === '[DONE]') return '';
+  try { return JSON.parse(match[2])?.choices?.[0]?.delta?.content || ''; } catch { return ''; }
+}
+
 /**
  * Send a chat message to OpenAB and stream the response.
  *
@@ -20,6 +26,19 @@ const SSE_FIELD_RE = /^(data|event|id|retry):\s*(.*)$/i;
  * @param {AbortSignal} [opts.signal]  — optional AbortController signal
  */
 export async function sendMessage({ text, endpoint, token, onChunk, onDone, onError, signal }) {
+  if (window.__JELLII_DESKTOP__ === true && window.jelliiDesktop?.streamChat) {
+    if (signal?.aborted) return;
+    const requestId = crypto.randomUUID();
+    let fullText = '';
+    await window.jelliiDesktop.streamChat({
+      requestId, text, endpoint, token,
+      onDelta(delta) { fullText += delta; onChunk?.(delta); },
+      onDone() { onDone?.(fullText); },
+      onError,
+    });
+    return;
+  }
+
   const headers = {
     'Content-Type': 'application/json',
   };
@@ -132,16 +151,8 @@ export async function sendMessage({ text, endpoint, token, onChunk, onDone, onEr
               return;
             }
 
-            try {
-              const parsed = JSON.parse(value);
-              const delta = parsed?.choices?.[0]?.delta?.content;
-              if (delta) {
-                fullText += delta;
-                onChunk?.(delta);
-              }
-            } catch {
-              // skip unparseable data lines
-            }
+            const delta = parseSseDataLine(line);
+            if (delta) { fullText += delta; onChunk?.(delta); }
             break;
           }
         }

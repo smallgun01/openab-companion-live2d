@@ -27,7 +27,7 @@ Browser                               OpenAB Backend
 - **Live2D Scene**: PixiJS v8 Application + untitled-pixi-live2d-engine sprite (CDN), wraps Cubism 5 Core WASM. Idle animations (breathing, blinking, body sway) on top.
 - **Chat**: SSE streaming via `fetch()` + `ReadableStream` — same parser as VRM companion
 - **Expressions**: 8 emotion tags (`[joy]`, `[sadness]`, ...) parsed from responses; `{ static, dynamic }` structure; lerp for static, sine oscillation for dynamic.
-- **Settings**: endpoint/token in localStorage
+- **Settings**: endpoint/background in localStorage; bearer tokens remain in memory for one session only. HTTPS is required except for localhost development.
 
 ### Why untitled-engine
 
@@ -40,23 +40,37 @@ Rendering pipeline delegate to upstream-maintained abstraction (guansss/PixiJS) 
 git clone https://github.com/smallgun01/openab-companion-live2d.git
 cd openab-companion-live2d
 
-# 2. Make sure Cubism Core is in place (already shipped in repo)
-#    lib/CubismSdkForWeb-5-r.1/Core/live2dcubismcore.min.js
+# 2. Install licensed runtime assets (they are intentionally not committed)
+#    See lib/README.md and provide JellyFish Girl under models/jellyfish-girl/.
+#    Verify before starting: npm run check:assets
 
 # 3. Start dev server
 node dev-server.mjs
 
 # 4. Open http://localhost:8011
-#    Configure endpoint + token in Settings (⚙️)
+#    Configure an HTTPS endpoint + session-only token in Settings (⚙️)
 #    Start chatting
 ```
+
+### Desktop runtime
+
+`npm run dev:electron` first builds `desktop-dist/`, then Electron loads those
+files directly. It does not start `dev-server.mjs` or a local gateway proxy.
+The gateway connection uses the browser's normal TLS checks.
+
+### Runtime asset gate
+
+Cubism Core and the JellyFish Girl model have separate licences and are not
+committed to this repository. `npm run check:assets` is the preflight;
+`npm run build:desktop-assets` runs it automatically and reports each missing
+path. A clone without licensed assets therefore fails early and clearly.
 
 ## File Structure
 
 ```
 openab-companion-live2d/
 ├── index.html              Entry point (loads Core WASM + PixiJS + engine from CDN)
-├── dev-server.mjs          Static file server + CORS proxy (⚠️ DEV ONLY)
+├── dev-server.mjs          Static development server only
 ├── css/
 │   └── style.css           All styles
 ├── js/
@@ -85,7 +99,7 @@ openab-companion-live2d/
 |---|---|---|
 | PixiJS v8 | `cdn.jsdelivr.net` (CDN) | Render pipeline |
 | untitled-pixi-live2d-engine v1.3.1 | `cdn.jsdelivr.net` (CDN) | Live2D → PixiJS abstraction |
-| Cubism Core WASM 5.1.0 | `lib/` (local, shipped) | Required by untitled-engine |
+| Cubism Core WASM 5.1.0 | local licensed install | Required by untitled-engine |
 
 ## License
 

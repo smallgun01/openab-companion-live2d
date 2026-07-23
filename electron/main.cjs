@@ -1,53 +1,71 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
-const { spawn } = require('node:child_process');
-const http = require('node:http');
 const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '..');
-const PORT = 8011;
-// Under `npm run`, npm preserves the actual Node executable here. `process.execPath`
-// would otherwise point at Electron and spawn a second Chromium application.
-const NODE_EXECUTABLE = process.env.npm_node_execpath || process.execPath;
-let proxyProcess;
+const DIST = path.join(ROOT, 'desktop-dist');
 let petWindow;
 let historyWindow;
 
-function serverIsReady() {
-  return new Promise((resolve) => {
-    const request = http.get(`http://127.0.0.1:${PORT}/`, (response) => {
-      response.resume();
-      resolve(response.statusCode === 200);
-    });
-    request.on('error', () => resolve(false));
-    request.setTimeout(300, () => {
-      request.destroy();
-      resolve(false);
-    });
-  });
+function isAllowedEndpoint(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' ||
+      (url.protocol === 'http:' && ['localhost', '127.0.0.1', '::1'].includes(url.hostname));
+  } catch { return false; }
 }
 
-async function ensureLocalServer() {
-  if (await serverIsReady()) return;
+function emitChat(sender, requestId, type, payload = {}) {
+  if (!sender.isDestroyed()) sender.send('companion:chat-event', { requestId, type, ...payload });
+}
 
-  proxyProcess = spawn(NODE_EXECUTABLE, ['dev-server.mjs'], {
-    cwd: ROOT,
-    env: {
-      ...process.env,
-      OPENAB_GATEWAY: process.env.OPENAB_GATEWAY || 'gw.k100.uk',
-    },
-    stdio: 'inherit',
-  });
-
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    if (await serverIsReady()) return;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+ipcMain.handle('companion:stream-chat', async (event, request) => {
+  console.log('[electron] native chat request received');
+  const { requestId, text, endpoint, token = '' } = request || {};
+  if (typeof requestId !== 'string' || typeof text !== 'string' || !text.trim() || !isAllowedEndpoint(endpoint)) {
+    return { ok: false, code: 400, message: 'Invalid chat request or endpoint.' };
   }
-  throw new Error(`Local companion server did not start on port ${PORT}`);
-}
+  if (text.length > 12000 || token.length > 4096) return { ok: false, code: 400, message: 'Chat input is too large.' };
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const response = await fetch(endpoint, {
+      method: 'POST', headers,
+      body: JSON.stringify({ model: 'default', messages: [{ role: 'user', content: text }], stream: true }),
+      signal: controller.signal,
+    });
+    if (!response.ok || !response.body) {
+      const detail = await response.text().catch(() => '');
+      return { ok: false, code: response.status, message: detail || `HTTP ${response.status}` };
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for await (const chunk of response.body) {
+      buffer += decoder.decode(chunk, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (data === '[DONE]') { emitChat(event.sender, requestId, 'done'); return { ok: true }; }
+        try {
+          const delta = JSON.parse(data)?.choices?.[0]?.delta?.content;
+          if (typeof delta === 'string' && delta) emitChat(event.sender, requestId, 'delta', { delta });
+        } catch { /* Ignore non-content SSE payloads. */ }
+      }
+    }
+    emitChat(event.sender, requestId, 'done');
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, code: error?.name === 'AbortError' ? 0 : 0, message: error?.name === 'AbortError' ? 'Request timeout after 60s' : (error?.message || 'Network error') };
+  } finally { clearTimeout(timeout); }
+});
 
 async function createWindow() {
-  await ensureLocalServer();
-
   petWindow = new BrowserWindow({
     width: 420,
     height: 720,
@@ -65,7 +83,8 @@ async function createWindow() {
     },
   });
 
-  await petWindow.loadURL(`http://127.0.0.1:${PORT}/`);
+  await petWindow.loadFile(path.join(DIST, 'index.html'));
+  console.log('[electron] bridge available:', await petWindow.webContents.executeJavaScript('typeof window.jelliiDesktop?.streamChat'));
   // Desktop pet: prefer the strongest standard Electron layer over normal apps.
   petWindow.setAlwaysOnTop(true, 'screen-saver');
   petWindow.setVisibleOnAllWorkspaces(true);
@@ -73,11 +92,10 @@ async function createWindow() {
 }
 
 ipcMain.handle('companion:open-history', async () => {
-  await ensureLocalServer();
   if (historyWindow && !historyWindow.isDestroyed()) { historyWindow.show(); historyWindow.focus(); return; }
   historyWindow = new BrowserWindow({ width: 460, height: 640, minWidth: 360, minHeight: 420, title: 'JellyFish Girl — Conversation history', backgroundColor: '#10182d', webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
   historyWindow.on('closed', () => { historyWindow = null; });
-  await historyWindow.loadURL(`http://127.0.0.1:${PORT}/history.html`);
+  await historyWindow.loadFile(path.join(DIST, 'history.html'));
 });
 
 app.whenReady().then(createWindow).catch((error) => {
@@ -86,4 +104,3 @@ app.whenReady().then(createWindow).catch((error) => {
 });
 
 app.on('window-all-closed', () => app.quit());
-app.on('before-quit', () => proxyProcess?.kill());

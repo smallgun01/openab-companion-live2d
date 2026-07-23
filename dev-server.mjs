@@ -1,19 +1,20 @@
 #!/usr/bin/env node
 /**
- * dev-server.mjs — static file server + CORS proxy in one process.
+ * dev-server.mjs — development-only static file server.
  *
  * Usage:  node dev-server.mjs
  *         Open http://localhost:8011 in browser.
  *
  * - Serves static files from current directory (index.html, css/, js/, models/)
- * - Proxies /v1/* requests to OPENAB_GATEWAY with CORS headers
- * - No need for `npx serve` or separate terminals
+ * - It never proxies credentials or disables TLS verification.
  *
  * ─────────────────────────────────────────────────────────────────
- * Configuring the LLM endpoint
+ * Configuring the LLM endpoint (web development)
  * ─────────────────────────────────────────────────────────────────
  *
- * 99% of the time, you DON'T need to touch OPENAB_GATEWAY:
+ * Use an HTTPS endpoint which permits this origin via CORS. The packaged
+ * Electron app does not use this server: its main process owns credentials
+ * and performs the verified-TLS request.
  *
  *   1. Run:  node dev-server.mjs
  *   2. Open: http://localhost:8011
@@ -23,25 +24,15 @@
  *        - Bearer Token (optional)
  *   5. Save. Settings persist in browser localStorage — no env needed.
  *
- * OPENAB_GATEWAY env var is for power users only (CI, containers, multi-env):
- *
- *   OPENAB_GATEWAY=staging-gateway.example.com node dev-server.mjs
- *
- * When set, it overrides the *default* proxy target — but the Settings panel
- * input always wins at runtime (per-session, per-browser).
- *
- * If you skip OPENAB_GATEWAY entirely, the default placeholder
- * 'your-gateway.example.com' is used. Browser requests will fail until you
- * configure the real endpoint via ⚙️ Settings.
+ * The configured endpoint is used directly by the browser. It must therefore
+ * permit this development origin via CORS.
  */
 import http from 'node:http';
-import https from 'node:https';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const TARGET = process.env.OPENAB_GATEWAY || 'your-gateway.example.com';
 const PORT = 8011;
 
 const MIME = {
@@ -64,62 +55,12 @@ function serveFile(res, filePath) {
     res.writeHead(200, { 'Content-Type': ct, 'Access-Control-Allow-Origin': '*' });
     res.end(data);
   } catch {
-    // fallback to index.html for SPA-style routing
-    try {
-      const index = fs.readFileSync(path.join(__dirname, 'index.html'));
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(index);
-    } catch {
-      res.writeHead(404, { 'Content-Type': 'text/plain' });
-      res.end('404 Not Found');
-    }
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('404 Not Found');
   }
-}
-
-function proxyToGateway(req, res) {
-  // ⚠️ DEV ONLY — TLS verification is disabled for local development.
-  // NEVER use this in production. The Authorization header is forwarded
-  // in plain text to any MITM attacker when rejectUnauthorized is false.
-
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204);
-    res.end();
-    return;
-  }
-
-  const opts = {
-    hostname: TARGET,
-    port: 443,
-    path: req.url,
-    method: req.method,
-    headers: { ...req.headers, host: TARGET },
-    rejectUnauthorized: false,
-  };
-
-  const upstream = https.request(opts, (upRes) => {
-    res.writeHead(upRes.statusCode, upRes.headers);
-    upRes.pipe(res);
-  });
-
-  upstream.on('error', (err) => {
-    res.writeHead(502, { 'Content-Type': 'text/plain' });
-    res.end(`Gateway unreachable: ${err.message}`);
-  });
-
-  req.pipe(upstream);
 }
 
 const server = http.createServer((req, res) => {
-  // API requests → proxy to gateway
-  if (req.url.startsWith('/v1/')) {
-    proxyToGateway(req, res);
-    return;
-  }
-
   // Static files
   let filePath = req.url === '/' ? '/index.html' : req.url.split('?')[0];
   filePath = path.join(__dirname, filePath);
@@ -134,14 +75,8 @@ const server = http.createServer((req, res) => {
   serveFile(res, filePath);
 });
 
-// ⚠️ Refuse to start in production — must check BEFORE listening
-if (process.env.NODE_ENV === 'production') {
-  console.error('❌ FATAL: dev-server.mjs must not run in production (rejectUnauthorized is disabled).');
-  process.exit(1);
-}
-
 server.listen(PORT, () => {
   console.log(`\n🔺 OpenAB Companion Live2D dev server`);
   console.log(`   http://localhost:${PORT}  ←  open this in your browser`);
-  console.log(`   API proxy → https://${TARGET}/v1/*\n`);
+  console.log('   Static development server only; no gateway proxy.\n');
 });

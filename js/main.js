@@ -74,6 +74,7 @@ const quickCompose    = document.getElementById('quick-compose');
 const quickInput      = document.getElementById('quick-input');
 const quickSendBtn    = document.getElementById('quick-send-btn');
 const historyBtn      = document.getElementById('history-btn');
+const quickSettingsBtn = document.getElementById('quick-settings-btn');
 const settingsOverlay   = document.getElementById('settings-overlay');
 const settingsBtn    = document.getElementById('settings-btn');
 const settingsClose  = document.getElementById('settings-close');
@@ -159,6 +160,7 @@ function wireEvents() {
     chatToggle.addEventListener('click', () => setQuickComposeOpen(true));
     speechBubble.addEventListener('click', () => window.jelliiDesktop?.openHistory());
     quickSendBtn.addEventListener('click', handleQuickSend);
+    quickSettingsBtn.addEventListener('click', () => settingsOverlay.classList.add('open'));
     quickInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleQuickSend(); }
       if (e.key === 'Escape') setQuickComposeOpen(false);
@@ -380,14 +382,19 @@ function handleSaveSettings() {
   const newToken = tokenInp.value.trim();
   const newBg = bgColorInp.value || settings.bgColor;
 
-  saveSettings({ endpoint: newEndpoint, token: newToken, bgColor: newBg });
-  settings = getSettings();
+  try {
+    saveSettings({ endpoint: newEndpoint, bgColor: newBg });
+  } catch (err) {
+    setStatus('error', err.message);
+    return;
+  }
+  settings = { ...getSettings(), token: newToken };
 
   document.documentElement.style.setProperty('--bg', newBg);
   if (setBackgroundColor) setBackgroundColor(newBg);
 
   settingsOverlay.classList.remove('open');
-  setStatus('connected', 'Settings saved');
+  setStatus('connected', 'Settings saved (token is kept only for this session)');
 }
 
 function enableChat() {

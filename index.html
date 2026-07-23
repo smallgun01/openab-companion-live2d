@@ -20,6 +20,7 @@
         <textarea id="quick-input" rows="1" placeholder="Talk to JellyFish Girl…" disabled></textarea>
         <button id="quick-send-btn" type="button" title="Send message" aria-label="Send message" disabled>▶</button>
         <button id="history-btn" type="button" title="Open conversation history" aria-label="Open conversation history">☷</button>
+        <button id="quick-settings-btn" type="button" title="Open settings" aria-label="Open settings">⚙️</button>
       </div>
       <div id="model-prompt">
         <p>🎭 Loading JellyFish Girl…</p>
@@ -60,7 +61,7 @@
       </div>
       <div class="field">
         <label for="setting-token">Bearer Token (optional)</label>
-        <input type="text" id="setting-token" placeholder="sk-...">
+        <input type="password" id="setting-token" placeholder="Stored only for this session" autocomplete="off">
       </div>
       <div class="field">
         <label for="setting-bgcolor">Background Color</label>
