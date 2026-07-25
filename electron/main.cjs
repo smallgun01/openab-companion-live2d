@@ -10,8 +10,14 @@ function isAllowedEndpoint(value) {
   try {
     const url = new URL(value);
     return url.protocol === 'https:' ||
-      (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname));
+      (url.protocol === 'http:' && isLoopbackHostname(url.hostname));
   } catch { return false; }
+}
+
+function isLoopbackHostname(hostname) {
+  // URL implementations serialize IPv6 hostnames differently; normalize both forms.
+  const normalized = hostname.replace(/^\[|\]$/g, '');
+  return ['localhost', '127.0.0.1', '::1'].includes(normalized);
 }
 
 function emitChat(sender, requestId, type, payload = {}) {

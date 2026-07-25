@@ -44,8 +44,14 @@ export function isAllowedEndpoint(value) {
   try {
     const url = new URL(value);
     if (url.protocol === 'https:') return true;
-    return url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+    return url.protocol === 'http:' && isLoopbackHostname(url.hostname);
   } catch { return false; }
+}
+
+export function isLoopbackHostname(hostname) {
+  // URL implementations serialize IPv6 hostnames differently; normalize both forms.
+  const normalized = hostname.replace(/^\[|\]$/g, '');
+  return ['localhost', '127.0.0.1', '::1'].includes(normalized);
 }
 
 /* ── Helpers ──────────────────────────────────────────── */

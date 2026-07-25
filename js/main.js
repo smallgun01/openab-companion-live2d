@@ -7,6 +7,7 @@
 import { applyExpression, parseAndApply } from './expression.js';
 import { sendMessage } from './chat.js';
 import { getSettings, saveSettings } from './settings.js';
+import { clearRetryTimer } from './retry-timer.js';
 
 // Dynamic imports — Live2D module may fail (SDK not set up); chat always works
 let initScene, setParameter, setBackgroundColor, hasParameters, getModel, dispose, getLastInitError;
@@ -182,6 +183,7 @@ async function handleSend(textOverride, isRetry = false) {
   const text = typeof textOverride === 'string' ? textOverride : chatInput.value.trim();
   if (!text || (isStreaming && !isRetry)) return;
   if (isRetry && retryContext?.text !== text) return;
+  retryTimer = clearRetryTimer(retryTimer);
 
   if (!textOverride) {
     chatInput.value = '';
@@ -282,6 +284,7 @@ function hasModelEmotionTag(text) {
 }
 
 function finishStream() {
+  retryTimer = clearRetryTimer(retryTimer);
   isStreaming = false;
   sendBtn.disabled = false;
   if (window.__JELLII_DESKTOP__) quickSendBtn.disabled = false;
