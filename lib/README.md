@@ -1,42 +1,27 @@
-# Cubism SDK — Setup
+# Cubism Core setup
 
-This project uses **Live2D Cubism 5 SDK for Web**. The SDK files **cannot** be distributed in this repo per the Live2D EULA — you must download them yourself.
+This project uses `untitled-pixi-live2d-engine` with the **Cubism Core** only.
+The Core and JellyFish Girl model are licensed assets and are intentionally not
+committed to this repository.
 
-## Quick Setup
+## Install the required Core file
 
-```bash
-# 1. Download Cubism 5 SDK for Web
-#    Visit https://www.live2d.com/sdk/download/web/
-#    Accept the license and download CubismSdkForWeb-5-r.1.zip
+1. Download the Cubism SDK for Web from <https://www.live2d.com/sdk/download/web/> and accept its licence.
+2. Copy `Core/live2dcubismcore.min.js` into:
 
-# 2. Extract the zip
-unzip CubismSdkForWeb-5-r.1.zip -d /tmp/
+   ```text
+   lib/CubismSdkForWeb-5-r.1/Core/live2dcubismcore.min.js
+   ```
 
-# 3. OR clone from GitHub (same SDK)
-git clone https://github.com/Live2D/CubismWebSamples.git /tmp/CubismWebSamples
+3. Place the separately licensed JellyFish Girl model under `models/jellyfish-girl/`.
+4. Run `npm run check:assets` before launching the web or Electron runtime.
 
-# 4. Copy SDK files into this project
-#    From the official zip:
-cp -r /tmp/CubismSdkForWeb-5-r.1/Core ./lib/
+There is deliberately no `lib/setup.sh`, no local Cubism Framework build, and
+no `CubismFramework/` directory. PixiJS and the Live2D engine are loaded from
+the pinned CDN paths in `index.html`.
 
-#    From GitHub samples:
-cp -r /tmp/CubismWebSamples/Samples/TypeScript/Demo/Packages/CubismSdkForWeb-5-r.1/Core ./lib/
+## Licence
 
-# 5. Run the setup script
-bash lib/setup.sh
-```
-
-## What setup.sh Does
-
-1. Copies the Cubism Core (`.wasm` + `.js`) into place
-2. Compiles the Framework TypeScript → ES modules with esbuild
-3. Outputs to `lib/CubismFramework/`
-
-## SDK License
-
-The Live2D Cubism SDK is proprietary software. See `lib/LICENSE.md` for details.
-
-You **must** accept the Live2D SDK License Agreement before using this software:
-https://www.live2d.com/eula/live2d-sdk-license-agreement_en.html
-
-Commercial use requires a separate Live2D Publishing License.
+The Live2D Cubism SDK is proprietary software. See `lib/LICENSE.md` and the
+<https://www.live2d.com/eula/live2d-sdk-license-agreement_en.html> licence
+agreement. Commercial use may require a separate Live2D Publishing License.

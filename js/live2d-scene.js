@@ -37,6 +37,7 @@ let bgSprite = null;
 
 /** @type {object} — the Live2D model instance */
 let live2dModel = null;
+const parameterIdCache = new Map();
 
 /** @type {boolean} — model fully loaded */
 let modelReady = false;
@@ -220,12 +221,9 @@ export function setParameter(name, value) {
     const im = live2dModel.internalModel;
     const model = im.coreModel;
     if (model && model.setParameterValueById) {
-      // Cubism SDK needs CubismIdHandle, not plain string
-      const idManager = PIXI.live2d.CubismFramework.getIdManager();
-      const idHandle = idManager.getId(name);
+      const idHandle = getParameterId(name);
       if (idHandle) {
         model.setParameterValueById(idHandle, value);
-        console.log('[setParameter]', name, '=', value);
       } else {
         console.warn('[setParameter] unknown param:', name);
       }
@@ -247,14 +245,21 @@ export function getParameter(name) {
     const im = live2dModel.internalModel;
     const model = im.coreModel;
     if (model && model.getParameterValueById) {
-      const idManager = PIXI.live2d.CubismFramework.getIdManager();
-      const idHandle = idManager.getId(name);
+      const idHandle = getParameterId(name);
       return idHandle ? model.getParameterValueById(idHandle) : 0;
     }
     return 0;
   } catch {
     return 0;
   }
+}
+
+function getParameterId(name) {
+  if (parameterIdCache.has(name)) return parameterIdCache.get(name);
+  const idManager = PIXI.live2d.CubismFramework.getIdManager();
+  const idHandle = idManager.getId(name);
+  parameterIdCache.set(name, idHandle || null);
+  return idHandle;
 }
 
 /**
@@ -344,5 +349,6 @@ export function dispose() {
     app = null;
   }
   modelReady = false;
+  parameterIdCache.clear();
   console.log('[live2d-scene] disposed');
 }

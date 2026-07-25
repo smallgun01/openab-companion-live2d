@@ -54,6 +54,8 @@ let settings;
 let streamingAbort = null;
 let isStreaming = false;
 let retryCount = 0;
+let retryTimer = null;
+let retryContext = null;
 const MAX_RETRIES = 3;
 
 /* ── DOM refs ─────────────────────────────────────────── */
@@ -176,23 +178,33 @@ function wireEvents() {
 
 /* ── Message Handling ─────────────────────────────────── */
 
-async function handleSend(textOverride) {
+async function handleSend(textOverride, isRetry = false) {
   const text = typeof textOverride === 'string' ? textOverride : chatInput.value.trim();
-  if (!text || isStreaming) return;
+  if (!text || (isStreaming && !isRetry)) return;
+  if (isRetry && retryContext?.text !== text) return;
 
   if (!textOverride) {
     chatInput.value = '';
     chatInput.style.height = 'auto';
   }
 
-  addBubble('user', text);
-  const assistantBubble = addBubble('assistant', '', true);
-  const contentSpan = assistantBubble.querySelector('.content');
-  const cursorSpan = assistantBubble.querySelector('.cursor');
+  let assistantBubble;
+  let contentSpan;
+  let cursorSpan;
+  if (isRetry) {
+    ({ assistantBubble, contentSpan, cursorSpan } = retryContext);
+  } else {
+    addBubble('user', text);
+    assistantBubble = addBubble('assistant', '', true);
+    contentSpan = assistantBubble.querySelector('.content');
+    cursorSpan = assistantBubble.querySelector('.cursor');
+    retryContext = { text, assistantBubble, contentSpan, cursorSpan };
+    retryCount = 0;
+  }
 
   isStreaming = true;
   sendBtn.disabled = true;
-  retryCount = 0;
+  if (window.__JELLII_DESKTOP__) quickSendBtn.disabled = true;
   setStatus('connected', 'Typing…');
   latestSpeechBubble = null;
   // SSE exposes no tool/reasoning event. This truthfully means only that the
@@ -236,17 +248,22 @@ async function handleSend(textOverride) {
       setStatus('connected', 'Ready');
     },
     onError(code, msg) {
+      if (code === 429 && retryCount < MAX_RETRIES) {
+        retryCount++;
+        addBubble('system', `⚠️ Server busy — retry ${retryCount}/${MAX_RETRIES}…`);
+        streamingAbort = null;
+        setStatus('connected', `Server busy — retrying ${retryCount}/${MAX_RETRIES}…`);
+        retryTimer = setTimeout(() => {
+          retryTimer = null;
+          handleSend(text, true);
+        }, 3000);
+        return;
+      }
+
       cursorSpan?.remove();
       assistantBubble.classList.remove('streaming');
       finishStream();
       applyExpression('neutral');
-
-      if (code === 429 && retryCount < MAX_RETRIES) {
-        retryCount++;
-        addBubble('system', `⚠️ Server busy — retry ${retryCount}/${MAX_RETRIES}…`);
-        setTimeout(() => handleSend(text), 3000);
-        return;
-      }
 
       if (code === 429) {
         addBubble('error', '⚠️ Server busy. Please try again later.');
@@ -267,7 +284,9 @@ function hasModelEmotionTag(text) {
 function finishStream() {
   isStreaming = false;
   sendBtn.disabled = false;
+  if (window.__JELLII_DESKTOP__) quickSendBtn.disabled = false;
   streamingAbort = null;
+  retryContext = null;
   if (!window.__JELLII_DESKTOP__) chatInput.focus();
 }
 

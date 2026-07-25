@@ -31,7 +31,7 @@ Browser                               OpenAB Backend
 
 ### Why untitled-engine
 
-Rendering pipeline delegate to upstream-maintained abstraction (guansss/PixiJS) instead of guessing Cubism SDK behavior with hand-written shaders + monkey-patches. See `../projects/openab-companion-live2d/STATUS.md` for the full architectural rationale.
+Rendering pipeline delegates to the upstream-maintained abstraction instead of guessing Cubism SDK behavior with hand-written shaders and monkey-patches.
 
 ## Quick Start
 
@@ -81,13 +81,13 @@ openab-companion-live2d/
 │   ├── live2d-scene.js     PixiJS App init, model load, render loop
 │   └── live2d-anim.js      Sine-driven idle animations
 ├── lib/
-│   ├── README.md           SDK setup notes (now obsolete — kept for git history)
+│   ├── README.md           Cubism Core installation notes
 │   └── LICENSE.md          Live2D SDK license notice
 ├── lib/CubismSdkForWeb-5-r.1/
 │   └── Core/
 │       └── live2dcubismcore.min.js   ← required by untitled-engine
 ├── models/
-│   └── Haru/               JellyFish Girl (custom model)
+│   └── jellyfish-girl/     Licensed JellyFish Girl model (not committed)
 ├── motions/                Post-MVP: .motion3.json files
 ├── LICENSE                 MIT
 └── README.md
