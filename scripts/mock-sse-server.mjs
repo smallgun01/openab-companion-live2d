@@ -29,6 +29,10 @@ export function createMockSseServer({ mode = 'stream', intervalMs = 1000, chunks
       return;
     }
 
+    // The fixture does not inspect request payloads, but must drain them so a
+    // large test request cannot remain buffered for the life of the stream.
+    req.resume();
+
     state.requests += 1;
     if (mode === 'always-429') {
       writeJson(res, 429, { error: { message: 'Mock server busy' } });

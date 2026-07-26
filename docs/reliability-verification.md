@@ -28,4 +28,5 @@ Use the same endpoint.
 - Press **Stop** before the 3-second retry delay expires: `requests=1` remains unchanged after waiting.
 - Do not press Stop: the server receives exactly four requests (initial request plus three retries), then the UI shows the terminal retry-exhausted message and returns to Ready.
 
-The fixture is also covered by `npm test`.
+`npm test` covers the fixture's basic SSE and 429 protocol behavior. The Stop
+and retry-cancellation flows remain manual UI acceptance checks using this fixture.

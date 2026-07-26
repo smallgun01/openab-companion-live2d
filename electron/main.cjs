@@ -5,6 +5,9 @@ const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'desktop-dist');
 let petWindow;
 let historyWindow;
+const CANCELLED_REQUEST = Symbol('companion:cancelled');
+// Main-process ownership: this map owns the real HTTP AbortController. Renderer
+// request gates only suppress stale UI callbacks and cannot stop this fetch alone.
 const activeChatRequests = new Map();
 
 function isAllowedEndpoint(value) {
@@ -69,7 +72,7 @@ ipcMain.handle('companion:stream-chat', async (event, request) => {
     emitChat(event.sender, requestId, 'done');
     return { ok: true };
   } catch (error) {
-    const cancelled = controller.signal.aborted && controller.signal.reason === 'cancelled';
+    const cancelled = controller.signal.aborted && controller.signal.reason === CANCELLED_REQUEST;
     return { ok: false, code: cancelled ? 499 : 0, message: cancelled ? 'Request cancelled' : (error?.name === 'AbortError' ? 'Request timeout after 60s' : (error?.message || 'Network error')) };
   } finally {
     clearTimeout(timeout);
@@ -80,7 +83,7 @@ ipcMain.handle('companion:stream-chat', async (event, request) => {
 ipcMain.handle('companion:cancel-chat', (event, requestId) => {
   const request = activeChatRequests.get(requestId);
   if (!request || request.sender !== event.sender) return { ok: false };
-  request.controller.abort('cancelled');
+  request.controller.abort(CANCELLED_REQUEST);
   return { ok: true };
 });
 
