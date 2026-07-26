@@ -115,6 +115,7 @@ html.electron-desktop #quick-input {
 }
 html.electron-desktop #quick-input:focus { border-color: var(--accent); }
 html.electron-desktop #quick-send-btn,
+html.electron-desktop #quick-stop-btn,
 html.electron-desktop #history-btn,
 html.electron-desktop #quick-settings-btn {
   width: 38px;
@@ -127,6 +128,7 @@ html.electron-desktop #quick-settings-btn {
   font-size: 16px;
 }
 html.electron-desktop #quick-send-btn { background: var(--accent); }
+html.electron-desktop #quick-stop-btn { background: var(--danger, #c9475c); }
 html.electron-desktop #history-btn { background: var(--surface2); }
 html.electron-desktop #quick-settings-btn { background: var(--surface2); }
 html.electron-desktop #quick-send-btn:disabled { opacity: .45; cursor: not-allowed; }
@@ -370,6 +372,18 @@ html.electron-desktop #speech-bubble-text {
 }
 #send-btn:hover { opacity: 0.85; }
 #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+#stop-btn {
+  width: 42px;
+  height: 42px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--danger, #c9475c);
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+#stop-btn:hover { opacity: 0.85; }
 
 /* === Settings Panel === */
 #settings-overlay {

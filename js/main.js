@@ -8,6 +8,8 @@ import { applyExpression, parseAndApply } from './expression.js';
 import { sendMessage } from './chat.js';
 import { getSettings, saveSettings } from './settings.js';
 import { clearRetryTimer } from './retry-timer.js';
+import { createRequestGate } from './request-lifecycle.js';
+import { retryExhaustedMessage } from './retry-policy.js';
 
 // Dynamic imports — Live2D module may fail (SDK not set up); chat always works
 let initScene, setParameter, setBackgroundColor, hasParameters, getModel, dispose, getLastInitError;
@@ -58,6 +60,7 @@ let retryCount = 0;
 let retryTimer = null;
 let retryContext = null;
 const MAX_RETRIES = 3;
+const requestGate = createRequestGate();
 
 /* ── DOM refs ─────────────────────────────────────────── */
 const app            = document.getElementById('app');
@@ -68,6 +71,7 @@ const statusText     = document.getElementById('status-text');
 const messagesEl     = document.getElementById('messages');
 const chatInput      = document.getElementById('chat-input');
 const sendBtn        = document.getElementById('send-btn');
+const stopBtn        = document.getElementById('stop-btn');
 const chatPanel       = document.getElementById('chat-panel');
 const chatToggle      = document.getElementById('chat-toggle');
 const chatCloseBtn    = document.getElementById('chat-close-btn');
@@ -76,6 +80,7 @@ const speechBubbleText = document.getElementById('speech-bubble-text');
 const quickCompose    = document.getElementById('quick-compose');
 const quickInput      = document.getElementById('quick-input');
 const quickSendBtn    = document.getElementById('quick-send-btn');
+const quickStopBtn    = document.getElementById('quick-stop-btn');
 const historyBtn      = document.getElementById('history-btn');
 const quickSettingsBtn = document.getElementById('quick-settings-btn');
 const settingsOverlay   = document.getElementById('settings-overlay');
@@ -144,6 +149,7 @@ async function init() {
 
 function wireEvents() {
   sendBtn.addEventListener('click', handleSend);
+  stopBtn.addEventListener('click', cancelActiveStream);
   chatInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -163,6 +169,7 @@ function wireEvents() {
     chatToggle.addEventListener('click', () => setQuickComposeOpen(true));
     speechBubble.addEventListener('click', () => window.jelliiDesktop?.openHistory());
     quickSendBtn.addEventListener('click', handleQuickSend);
+    quickStopBtn.addEventListener('click', cancelActiveStream);
     quickSettingsBtn.addEventListener('click', () => settingsOverlay.classList.add('open'));
     quickInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleQuickSend(); }
@@ -205,8 +212,7 @@ async function handleSend(textOverride, isRetry = false) {
   }
 
   isStreaming = true;
-  sendBtn.disabled = true;
-  if (window.__JELLII_DESKTOP__) quickSendBtn.disabled = true;
+  updateStreamControls();
   setStatus('connected', 'Typing…');
   latestSpeechBubble = null;
   // SSE exposes no tool/reasoning event. This truthfully means only that the
@@ -216,6 +222,7 @@ async function handleSend(textOverride, isRetry = false) {
 
   const abort = new AbortController();
   streamingAbort = abort;
+  const requestToken = requestGate.start();
 
   let fullText = '';
   let lastExpressionCheck = '';
@@ -226,6 +233,7 @@ async function handleSend(textOverride, isRetry = false) {
     token: settings.token,
     signal: abort.signal,
     onChunk(delta) {
+      if (!requestGate.isCurrent(requestToken)) return;
       fullText += delta;
       // Strip tags AND apply expression; show clean text
       const cleaned = parseAndApply(fullText);
@@ -237,6 +245,7 @@ async function handleSend(textOverride, isRetry = false) {
       scrollBottom();
     },
     onDone() {
+      if (!requestGate.isCurrent(requestToken)) return;
       // Final expression parse + strip any remaining tags
       const cleaned = parseAndApply(fullText);
       if (!hasModelEmotionTag(fullText)) applyExpression('neutral');
@@ -250,13 +259,14 @@ async function handleSend(textOverride, isRetry = false) {
       setStatus('connected', 'Ready');
     },
     onError(code, msg) {
+      if (!requestGate.isCurrent(requestToken)) return;
       if (code === 429 && retryCount < MAX_RETRIES) {
         retryCount++;
         addBubble('system', `⚠️ Server busy — retry ${retryCount}/${MAX_RETRIES}…`);
-        streamingAbort = null;
         setStatus('connected', `Server busy — retrying ${retryCount}/${MAX_RETRIES}…`);
         retryTimer = setTimeout(() => {
           retryTimer = null;
+          if (!requestGate.isCurrent(requestToken)) return;
           handleSend(text, true);
         }, 3000);
         return;
@@ -268,7 +278,7 @@ async function handleSend(textOverride, isRetry = false) {
       applyExpression('neutral');
 
       if (code === 429) {
-        addBubble('error', '⚠️ Server busy. Please try again later.');
+        addBubble('error', retryExhaustedMessage(retryCount));
         showSpeechBubble('Server busy. Try again shortly.', 'error');
       } else {
         addBubble('error', `Error (${code}): ${msg}`);
@@ -286,11 +296,33 @@ function hasModelEmotionTag(text) {
 function finishStream() {
   retryTimer = clearRetryTimer(retryTimer);
   isStreaming = false;
-  sendBtn.disabled = false;
-  if (window.__JELLII_DESKTOP__) quickSendBtn.disabled = false;
+  updateStreamControls();
   streamingAbort = null;
   retryContext = null;
   if (!window.__JELLII_DESKTOP__) chatInput.focus();
+}
+
+function updateStreamControls() {
+  sendBtn.disabled = isStreaming;
+  stopBtn.hidden = !isStreaming;
+  if (window.__JELLII_DESKTOP__) {
+    quickSendBtn.disabled = isStreaming;
+    quickStopBtn.hidden = !isStreaming;
+  }
+}
+
+function cancelActiveStream() {
+  if (!isStreaming) return;
+  requestGate.invalidate();
+  retryTimer = clearRetryTimer(retryTimer);
+  streamingAbort?.abort();
+  retryContext?.cursorSpan?.remove();
+  retryContext?.assistantBubble?.classList.remove('streaming');
+  addBubble('system', 'Request cancelled.');
+  applyExpression('neutral');
+  showSpeechBubble('Request cancelled.', 'error');
+  setStatus('connected', 'Ready');
+  finishStream();
 }
 
 /* ── Desktop chat / speech bubble ─────────────────────── */

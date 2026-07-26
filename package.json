@@ -8,6 +8,8 @@
     "dev:electron": "npm run build:desktop-assets && electron electron/main.cjs",
     "build:desktop-assets": "node scripts/build-desktop-assets.mjs",
     "check:assets": "node scripts/check-assets.mjs",
+    "mock:sse": "node scripts/mock-sse-server.mjs --mode=stream",
+    "mock:429": "node scripts/mock-sse-server.mjs --mode=always-429",
     "test": "node --test test/*.test.mjs",
     "lint": "node scripts/lint.mjs"
   },

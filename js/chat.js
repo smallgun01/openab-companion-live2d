@@ -30,12 +30,18 @@ export async function sendMessage({ text, endpoint, token, onChunk, onDone, onEr
     if (signal?.aborted) return;
     const requestId = crypto.randomUUID();
     let fullText = '';
-    await window.jelliiDesktop.streamChat({
-      requestId, text, endpoint, token,
-      onDelta(delta) { fullText += delta; onChunk?.(delta); },
-      onDone() { onDone?.(fullText); },
-      onError,
-    });
+    const cancel = () => window.jelliiDesktop.cancelChat?.(requestId);
+    signal?.addEventListener('abort', cancel, { once: true });
+    try {
+      await window.jelliiDesktop.streamChat({
+        requestId, text, endpoint, token,
+        onDelta(delta) { fullText += delta; onChunk?.(delta); },
+        onDone() { onDone?.(fullText); },
+        onError,
+      });
+    } finally {
+      signal?.removeEventListener('abort', cancel);
+    }
     return;
   }
 

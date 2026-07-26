@@ -5,6 +5,7 @@ const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'desktop-dist');
 let petWindow;
 let historyWindow;
+const activeChatRequests = new Map();
 
 function isAllowedEndpoint(value) {
   try {
@@ -33,6 +34,7 @@ ipcMain.handle('companion:stream-chat', async (event, request) => {
   if (text.length > 12000 || token.length > 4096) return { ok: false, code: 400, message: 'Chat input is too large.' };
 
   const controller = new AbortController();
+  activeChatRequests.set(requestId, { controller, sender: event.sender });
   const timeout = setTimeout(() => controller.abort(), 60000);
   try {
     const headers = { 'Content-Type': 'application/json' };
@@ -67,8 +69,19 @@ ipcMain.handle('companion:stream-chat', async (event, request) => {
     emitChat(event.sender, requestId, 'done');
     return { ok: true };
   } catch (error) {
-    return { ok: false, code: error?.name === 'AbortError' ? 0 : 0, message: error?.name === 'AbortError' ? 'Request timeout after 60s' : (error?.message || 'Network error') };
-  } finally { clearTimeout(timeout); }
+    const cancelled = controller.signal.aborted && controller.signal.reason === 'cancelled';
+    return { ok: false, code: cancelled ? 499 : 0, message: cancelled ? 'Request cancelled' : (error?.name === 'AbortError' ? 'Request timeout after 60s' : (error?.message || 'Network error')) };
+  } finally {
+    clearTimeout(timeout);
+    if (activeChatRequests.get(requestId)?.controller === controller) activeChatRequests.delete(requestId);
+  }
+});
+
+ipcMain.handle('companion:cancel-chat', (event, requestId) => {
+  const request = activeChatRequests.get(requestId);
+  if (!request || request.sender !== event.sender) return { ok: false };
+  request.controller.abort('cancelled');
+  return { ok: true };
 });
 
 async function createWindow() {

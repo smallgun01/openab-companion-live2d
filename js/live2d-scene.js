@@ -258,7 +258,8 @@ function getParameterId(name) {
   if (parameterIdCache.has(name)) return parameterIdCache.get(name);
   const idManager = PIXI.live2d.CubismFramework.getIdManager();
   const idHandle = idManager.getId(name);
-  parameterIdCache.set(name, idHandle || null);
+  // A failed lookup can become valid after model initialization; do not negative-cache it.
+  if (idHandle) parameterIdCache.set(name, idHandle);
   return idHandle;
 }
 
