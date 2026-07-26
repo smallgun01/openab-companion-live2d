@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('jelliiDesktop', {
   openHistory: () => ipcRenderer.invoke('companion:open-history'),
+  hidePet: () => ipcRenderer.invoke('companion:hide-pet'),
   cancelChat: (requestId) => ipcRenderer.invoke('companion:cancel-chat', requestId),
   streamChat: async ({ requestId, text, endpoint, token, onDelta, onDone, onError }) => {
     const listener = (_event, message) => {

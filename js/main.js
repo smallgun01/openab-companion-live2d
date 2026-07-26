@@ -74,6 +74,7 @@ const sendBtn        = document.getElementById('send-btn');
 const stopBtn        = document.getElementById('stop-btn');
 const chatPanel       = document.getElementById('chat-panel');
 const chatToggle      = document.getElementById('chat-toggle');
+const desktopHideBtn  = document.getElementById('desktop-hide-btn');
 const chatCloseBtn    = document.getElementById('chat-close-btn');
 const speechBubble    = document.getElementById('speech-bubble');
 const speechBubbleText = document.getElementById('speech-bubble-text');
@@ -83,6 +84,7 @@ const quickSendBtn    = document.getElementById('quick-send-btn');
 const quickStopBtn    = document.getElementById('quick-stop-btn');
 const historyBtn      = document.getElementById('history-btn');
 const quickSettingsBtn = document.getElementById('quick-settings-btn');
+const quickHideBtn    = document.getElementById('quick-hide-btn');
 const settingsOverlay   = document.getElementById('settings-overlay');
 const settingsBtn    = document.getElementById('settings-btn');
 const settingsClose  = document.getElementById('settings-close');
@@ -167,10 +169,12 @@ function wireEvents() {
 
   if (window.__JELLII_DESKTOP__) {
     chatToggle.addEventListener('click', () => setQuickComposeOpen(true));
+    desktopHideBtn.addEventListener('click', () => window.jelliiDesktop?.hidePet());
     speechBubble.addEventListener('click', () => window.jelliiDesktop?.openHistory());
     quickSendBtn.addEventListener('click', handleQuickSend);
     quickStopBtn.addEventListener('click', cancelActiveStream);
     quickSettingsBtn.addEventListener('click', () => settingsOverlay.classList.add('open'));
+    quickHideBtn.addEventListener('click', () => window.jelliiDesktop?.hidePet());
     quickInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleQuickSend(); }
       if (e.key === 'Escape') setQuickComposeOpen(false);

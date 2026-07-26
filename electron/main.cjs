@@ -1,10 +1,18 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, nativeImage, screen, Tray } = require('electron');
 const path = require('node:path');
+const { normalizeBounds, readWindowState, writeWindowState } = require('./window-state.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'desktop-dist');
+const PET_STATE_PATH = path.join(app.getPath('userData'), 'pet-window-state.json');
+const PET_DEFAULT_SIZE = { width: 420, height: 720 };
+const PET_MINIMUM_SIZE = { width: 420, height: 540 };
 let petWindow;
 let historyWindow;
+let tray;
+let isQuitting = false;
+let saveWindowStateTimer;
+let lastPetBounds;
 const CANCELLED_REQUEST = Symbol('companion:cancelled');
 // Main-process ownership: this map owns the real HTTP AbortController. Renderer
 // request gates only suppress stale UI callbacks and cannot stop this fetch alone.
@@ -88,9 +96,11 @@ ipcMain.handle('companion:cancel-chat', (event, requestId) => {
 });
 
 async function createWindow() {
+  const savedBounds = readWindowState(PET_STATE_PATH);
+  const workAreas = screen.getAllDisplays().map((display) => display.workArea);
+  const initialBounds = normalizeBounds(savedBounds, defaultPetBounds(), workAreas, PET_MINIMUM_SIZE);
   petWindow = new BrowserWindow({
-    width: 420,
-    height: 720,
+    ...initialBounds,
     minWidth: 420,
     minHeight: 540,
     frame: false,
@@ -105,12 +115,103 @@ async function createWindow() {
     },
   });
 
+  lastPetBounds = petWindow.getBounds();
+  petWindow.on('move', rememberPetBounds);
+  petWindow.on('resize', rememberPetBounds);
+  petWindow.on('show', refreshTrayMenu);
+  petWindow.on('hide', refreshTrayMenu);
+  petWindow.on('minimize', refreshTrayMenu);
+  petWindow.on('restore', refreshTrayMenu);
+  petWindow.on('close', (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    hideCompanion();
+  });
+
   await petWindow.loadFile(path.join(DIST, 'index.html'));
   console.log('[electron] bridge available:', await petWindow.webContents.executeJavaScript('typeof window.jelliiDesktop?.streamChat'));
   // Desktop pet: prefer the strongest standard Electron layer over normal apps.
   petWindow.setAlwaysOnTop(true, 'screen-saver');
   petWindow.setVisibleOnAllWorkspaces(true);
   console.log('[electron] always-on-top:', petWindow.isAlwaysOnTop());
+  createTray();
+}
+
+function defaultPetBounds() {
+  const { workArea } = screen.getPrimaryDisplay();
+  return {
+    width: PET_DEFAULT_SIZE.width,
+    height: PET_DEFAULT_SIZE.height,
+    x: workArea.x + workArea.width - PET_DEFAULT_SIZE.width - 24,
+    y: workArea.y + workArea.height - PET_DEFAULT_SIZE.height - 48,
+  };
+}
+
+function scheduleWindowStateSave() {
+  clearTimeout(saveWindowStateTimer);
+  saveWindowStateTimer = setTimeout(saveWindowState, 300);
+}
+
+function rememberPetBounds() {
+  if (!petWindow || petWindow.isDestroyed()) return;
+  lastPetBounds = petWindow.getBounds();
+  scheduleWindowStateSave();
+}
+
+function saveWindowState() {
+  if (!lastPetBounds) return;
+  writeWindowState(PET_STATE_PATH, lastPetBounds);
+}
+
+function showPetWindow() {
+  if (!petWindow || petWindow.isDestroyed()) return;
+  // Wayland owns top-level window placement. Restore a minimized window so the
+  // compositor retains its in-session placement instead of re-placing a hidden
+  // transparent surface when show() is called.
+  if (petWindow.isMinimized()) petWindow.restore();
+  else petWindow.show();
+  petWindow.focus();
+}
+
+function hideCompanion() {
+  rememberPetBounds();
+  if (historyWindow && !historyWindow.isDestroyed()) historyWindow.hide();
+  if (petWindow && !petWindow.isDestroyed()) petWindow.minimize();
+}
+
+function resetPetPosition() {
+  if (!petWindow || petWindow.isDestroyed()) return;
+  petWindow.setBounds(defaultPetBounds());
+  lastPetBounds = petWindow.getBounds();
+  saveWindowState();
+  showPetWindow();
+}
+
+function createTray() {
+  if (tray) return;
+  tray = new Tray(createTrayIcon());
+  tray.setToolTip('Jellii Companion');
+  tray.on('click', () => {
+    if (petWindow?.isVisible()) hideCompanion();
+    else showPetWindow();
+  });
+  refreshTrayMenu();
+}
+
+function refreshTrayMenu() {
+  if (!tray) return;
+  const isVisible = petWindow && !petWindow.isDestroyed() && petWindow.isVisible() && !petWindow.isMinimized();
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: isVisible ? 'Hide Jellii' : 'Show Jellii', click: isVisible ? hideCompanion : showPetWindow },
+    { label: 'Reset position', click: resetPetPosition },
+    { type: 'separator' },
+    { label: 'Quit Jellii', click: () => app.quit() },
+  ]));
+}
+
+function createTrayIcon() {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#7b68ee"/><path d="M10 13c2-5 10-5 12 0v8c-2 4-10 4-12 0z" fill="#f5f3ff"/><circle cx="13" cy="16" r="1.5" fill="#29234d"/><circle cx="19" cy="16" r="1.5" fill="#29234d"/><path d="M13 20c2 1.5 4 1.5 6 0" stroke="#29234d" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>`;
+  return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`);
 }
 
 ipcMain.handle('companion:open-history', async () => {
@@ -120,9 +221,23 @@ ipcMain.handle('companion:open-history', async () => {
   await historyWindow.loadFile(path.join(DIST, 'history.html'));
 });
 
+ipcMain.handle('companion:hide-pet', (event) => {
+  if (!petWindow || event.sender !== petWindow.webContents) return { ok: false };
+  hideCompanion();
+  return { ok: true };
+});
+
 app.whenReady().then(createWindow).catch((error) => {
   console.error('[electron] startup failed:', error);
   app.quit();
 });
+
+app.on('before-quit', () => {
+  isQuitting = true;
+  clearTimeout(saveWindowStateTimer);
+  saveWindowState();
+});
+
+app.on('activate', showPetWindow);
 
 app.on('window-all-closed', () => app.quit());
