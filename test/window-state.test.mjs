@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { createRequire } from 'node:module';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { normalizeBounds } = require('../electron/window-state.cjs');
+const { normalizeBounds, readWindowState, writeWindowState } = require('../electron/window-state.cjs');
 
 const fallback = { x: 100, y: 100, width: 420, height: 720 };
 const displays = [
@@ -25,4 +28,17 @@ test('recovers an off-screen window onto the primary display', () => {
 
 test('falls back when saved state is malformed', () => {
   assert.deepEqual(normalizeBounds({ x: 'bad' }, fallback, displays), fallback);
+});
+
+test('round-trips saved window state through the atomic state file', (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jellii-window-state-'));
+  const filePath = path.join(directory, 'pet-window-state.json');
+  const bounds = { x: 320, y: 180, width: 640, height: 720 };
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+
+  writeWindowState(filePath, bounds);
+
+  assert.deepEqual(readWindowState(filePath), bounds);
+  assert.equal(fs.existsSync(`${filePath}.tmp`), false);
+  assert.equal(fs.statSync(filePath).mode & 0o777, 0o600);
 });

@@ -160,7 +160,13 @@ function rememberPetBounds() {
 
 function saveWindowState() {
   if (!lastPetBounds) return;
-  writeWindowState(PET_STATE_PATH, lastPetBounds);
+  try {
+    writeWindowState(PET_STATE_PATH, lastPetBounds);
+  } catch (error) {
+    // Window placement is optional state. A full disk or an inaccessible user
+    // data directory must never prevent a user-requested quit.
+    console.warn('[electron] could not save pet window state:', error.message);
+  }
 }
 
 function showPetWindow() {
@@ -181,8 +187,9 @@ function hideCompanion() {
 
 function resetPetPosition() {
   if (!petWindow || petWindow.isDestroyed()) return;
-  petWindow.setBounds(defaultPetBounds());
-  lastPetBounds = petWindow.getBounds();
+  const bounds = defaultPetBounds();
+  petWindow.setBounds(bounds);
+  lastPetBounds = bounds;
   saveWindowState();
   showPetWindow();
 }
