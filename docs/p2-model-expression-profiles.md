@@ -13,7 +13,8 @@ implemented with parameters, a native `.exp3.json`, a `.motion3.json`, or a
 safe no-op fallback.
 
 This document defines P2a only: the profile contract and a zero-regression
-migration of JellyFish Girl. It deliberately does not change the renderer.
+migration of JellyFish Girl. It introduces a thin adapter boundary but does
+not change the rendering engine or its visual behavior.
 
 ## Non-goals
 
@@ -47,7 +48,8 @@ chat transport, and emotion-tag parsing never do.
 
 Profiles are checked-in JSON (or JS modules exporting the same data) under
 `profiles/live2d/<profile-id>/`. A profile has a stable ID and an explicit
-schema version. It is data, not executable user code.
+schema version. P2a uses checked-in first-party JS modules; it does not load
+user-provided executable code.
 
 ```json
 {
@@ -203,17 +205,6 @@ model is introduced.
 P2a is complete only when JellyFish Girl remains visually and behaviorally
 unchanged while no application module directly depends on its parameter IDs.
 
-## New-model onboarding protocol (P2b preview)
-
-1. Add the model assets without committing licensed assets that are not
-   redistributable.
-2. Run profile inspection to list concrete parameter/expression/motion facts.
-3. Create a draft profile with only verified bindings.
-4. Calibrate each semantic expression against the original art and rigger's
-   intended motion language.
-5. Validate, then manually approve visual behavior. Missing capability stays
-   a deliberate fallback; it is never fabricated.
-
 ## Deferred decisions
 
 - JSON Schema file versus JS-module profiles: choose after confirming how much
@@ -224,3 +215,5 @@ unchanged while no application module directly depends on its parameter IDs.
   target model supplies those assets and engine support is verified.
 - VRM adapter: shares semantic contract, but uses a distinct VRM profile and
   does not reuse Cubism bindings.
+- New-model onboarding and profile approval: specify after a second model has
+  tested this boundary; P2a deliberately avoids prematurely freezing that SOP.

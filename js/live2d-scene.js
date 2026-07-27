@@ -15,6 +15,8 @@
  * Zero monkey-patches. Zero hand-written GLSL.
  */
 
+import { getActiveProfile } from './live2d-profile.js';
+
 // ── Module state ────────────────────────────────────────
 
 /** @type {import('pixi.js').Application} */
@@ -87,14 +89,15 @@ function _relayout() {
   const modelW = live2dModel.internalModel.originalWidth;
   const modelH = live2dModel.internalModel.originalHeight;
 
+  const { layout } = getActiveProfile();
   // Scale to fit canvas width, capped at full height
   const scaleX = app.screen.width / modelW;
   const scaleY = app.screen.height / modelH;
-  const scale = Math.min(scaleX, scaleY) * 0.85;
+  const scale = Math.min(scaleX, scaleY) * layout.scaleMultiplier;
   live2dModel.scale.set(scale);
 
-  // Bottom-center anchor (JellyFish Girl is half-body)
-  live2dModel.anchor.set(0.5, 1.0);
+  // Placement is profile data: different art crops require different anchors.
+  live2dModel.anchor.set(...layout.anchor);
   live2dModel.x = app.screen.width / 2;
   live2dModel.y = app.screen.height;
 }
@@ -182,7 +185,7 @@ export async function initScene(canvasEl, opts = {}) {
     }
 
     // ── Load Live2D model ──
-    const modelPath = 'models/jellyfish-girl/jellyfishgirl.model3.json';
+    const modelPath = getActiveProfile().assets.model;
     console.log('[live2d-scene] Loading model:', modelPath);
 
     live2dModel = await loadModelWithRetry(modelPath);
@@ -209,7 +212,7 @@ export async function initScene(canvasEl, opts = {}) {
 /**
  * Set a Live2D parameter by ID.
  *
- * @param {string} name  — parameter ID, e.g. 'ParamMouthOpenY'
+ * @param {string} name  — parameter ID supplied by the active profile
  * @param {number} value — 0.0–1.0
  */
 export function setParameter(name, value) {

@@ -3,7 +3,7 @@
  *
  *   startIdleAnimations()  — breathing + blinking + body sway
  *   stopIdleAnimations()   — pause all idle
- *   lipSync(amplitude)     — Post-MVP: drive ParamMouthOpenY (0–1)
+ *   lipSync(amplitude)     — drive the active profile's mouth-open binding
  *   isPlaying()            — idle active?
  *
  * MVP: parameter lerp only; no .motion3.json playback.
@@ -12,18 +12,19 @@
 
 import { setParameter, getParameter, hasParameters } from './live2d-scene.js';
 import { isExpressionActive, getExpressionParamKeys, tickExpressionDynamic } from './expression.js';
+import { requireBinding } from './live2d-profile.js';
 
 // ── Configuration ──────────────────────────────────────
-// ⚠️ Angle parameters (ParamAngleX, ParamBodyAngleX) use degree-scale values
+// Profile ranges may use degree-scale values; do not assume 0–1.
 
 const BREATH_CYCLE_S = 3.5;       // full breath cycle
-const BREATH_AMPLITUDE = 1.0;     // ParamBreath swing
+const BREATH_AMPLITUDE = 1.0;
 const BLINK_INTERVAL_MIN = 3.0;   // seconds
 const BLINK_INTERVAL_MAX = 5.0;
 const BLINK_DURATION_S = 0.15;    // blink close + open duration
-const SWAY_PERIOD_S = 8.0;        // body sway cycle (ParamBodyAngleX)
+const SWAY_PERIOD_S = 8.0;
 const SWAY_AMPLITUDE = 2.0;       // degrees
-const HEAD_SWAY_PERIOD_S = 10.0;  // head tilt cycle (ParamAngleX)
+const HEAD_SWAY_PERIOD_S = 10.0;
 const HEAD_SWAY_AMPLITUDE = 3.0;  // degrees
 
 // ── State ──────────────────────────────────────────────
@@ -56,8 +57,10 @@ export function startIdleAnimations() {
   idleStartTime = performance.now();
 
   // Ensure eyes start open (model defaults to 0 = closed)
-  setParameter('ParamEyeLOpen', 1);
-  setParameter('ParamEyeROpen', 1);
+  const blinkLeft = requireBinding('blink.left');
+  const blinkRight = requireBinding('blink.right');
+  setParameter(blinkLeft.id, blinkLeft.open);
+  setParameter(blinkRight.id, blinkRight.open);
 
   scheduleNextBlink();
   idleRAF = requestAnimationFrame(tick);
@@ -80,11 +83,11 @@ export function stopIdleAnimations() {
   }
 
   // Reset idle parameters
-  setParameter('ParamBreath', 0);
-  setParameter('ParamEyeLOpen', 1);
-  setParameter('ParamEyeROpen', 1);
-  setParameter('ParamBodyAngleX', 0);
-  setParameter('ParamAngleX', 0);
+  setParameter(requireBinding('idle.breath').id, 0);
+  setParameter(requireBinding('blink.left').id, requireBinding('blink.left').open);
+  setParameter(requireBinding('blink.right').id, requireBinding('blink.right').open);
+  setParameter(requireBinding('idle.bodySway').id, 0);
+  setParameter(requireBinding('idle.headSway').id, 0);
 
   console.log('[live2d-anim] Idle animations stopped');
 }
@@ -99,12 +102,12 @@ export function isPlaying() {
 /**
  * Post-MVP: Drive lip sync from external audio amplitude.
  *
- * @param {number} amplitude — 0.0–1.0 (maps to ParamMouthOpenY)
+ * @param {number} amplitude — normalized 0.0–1.0 mouth-open amplitude
  */
 export function lipSync(amplitude) {
   // Stub — Post-MVP implementation
   const clamped = Math.max(0, Math.min(1, amplitude));
-  setParameter('ParamMouthOpenY', clamped);
+  setParameter(requireBinding('lipSync.open').id, clamped);
 }
 
 // ── Per-frame tick ─────────────────────────────────────
@@ -118,29 +121,34 @@ function tick(now) {
   const exprActive = isExpressionActive();
   const exprKeys = exprActive ? getExpressionParamKeys() : new Set();
 
-  // ── Breathing (always runs; expression rarely touches ParamBreath) ──
-  if (!exprKeys.has('ParamBreath')) {
+  // ── Breathing (yields to an expression-owned binding) ──
+  const breath = requireBinding('idle.breath');
+  const bodySway = requireBinding('idle.bodySway');
+  const headSway = requireBinding('idle.headSway');
+  const blinkLeft = requireBinding('blink.left');
+  const blinkRight = requireBinding('blink.right');
+  if (!exprKeys.has(breath.id)) {
     const breathPhase = (elapsed % BREATH_CYCLE_S) / BREATH_CYCLE_S;
-    setParameter('ParamBreath', 0.5 + Math.sin(breathPhase * Math.PI * 2) * BREATH_AMPLITUDE * 0.5);
+    setParameter(breath.id, 0.5 + Math.sin(breathPhase * Math.PI * 2) * BREATH_AMPLITUDE * 0.5);
   }
 
   // ── Body sway (yields to expression) ──
-  if (!exprKeys.has('ParamBodyAngleX')) {
+  if (!exprKeys.has(bodySway.id)) {
     const swayPhase = (elapsed % SWAY_PERIOD_S) / SWAY_PERIOD_S;
-    setParameter('ParamBodyAngleX', Math.sin(swayPhase * Math.PI * 2) * SWAY_AMPLITUDE);
+    setParameter(bodySway.id, Math.sin(swayPhase * Math.PI * 2) * SWAY_AMPLITUDE);
   }
 
   // ── Head sway (yields to expression) ──
-  if (!exprKeys.has('ParamAngleX')) {
+  if (!exprKeys.has(headSway.id)) {
     const headPhase = (elapsed % HEAD_SWAY_PERIOD_S) / HEAD_SWAY_PERIOD_S;
-    setParameter('ParamAngleX', Math.sin(headPhase * Math.PI * 2) * HEAD_SWAY_AMPLITUDE);
+    setParameter(headSway.id, Math.sin(headPhase * Math.PI * 2) * HEAD_SWAY_AMPLITUDE);
   }
 
   // ── Expression dynamic oscillation (head sway, body rock, etc.) ──
   tickExpressionDynamic(now);
 
   // ── Blink (eye open/close yields to expression on those params) ──
-  if (!exprKeys.has('ParamEyeLOpen') && !exprKeys.has('ParamEyeROpen')) {
+  if (!exprKeys.has(blinkLeft.id) && !exprKeys.has(blinkRight.id)) {
     tickBlink(now);
   } else {
     // Expression controls eyes — skip blink state machine
@@ -165,8 +173,8 @@ function tickBlink(now) {
     case 'closing': {
       // 0 → 1: eyes close
       const value = 1 - easeInQuad(t);  // 1 → 0
-      setParameter('ParamEyeLOpen', value);
-      setParameter('ParamEyeROpen', value);
+      setParameter(requireBinding('blink.left').id, value);
+      setParameter(requireBinding('blink.right').id, value);
       if (t >= 1) {
         blinkPhase = 'opening';
         blinkStartTime = now;
@@ -176,8 +184,8 @@ function tickBlink(now) {
     case 'opening': {
       // Restore to pre-blink value (preserves expression eye setting)
       const value = blinkPreEyeL * easeOutQuad(t);  // 0 → blinkPreEyeL
-      setParameter('ParamEyeLOpen', value);
-      setParameter('ParamEyeROpen', blinkPreEyeR * easeOutQuad(t));
+      setParameter(requireBinding('blink.left').id, value);
+      setParameter(requireBinding('blink.right').id, blinkPreEyeR * easeOutQuad(t));
       if (t >= 1) {
         blinkPhase = 'idle';
         scheduleNextBlink();
@@ -197,8 +205,8 @@ function scheduleNextBlink() {
     blinkTimer = null;
     if (!idleActive) return;
     // Capture actual current eye values (may be set by expression)
-    blinkPreEyeL = getParameter('ParamEyeLOpen');
-    blinkPreEyeR = getParameter('ParamEyeROpen');
+    blinkPreEyeL = getParameter(requireBinding('blink.left').id);
+    blinkPreEyeR = getParameter(requireBinding('blink.right').id);
     blinkPhase = 'closing';
     blinkStartTime = performance.now();
   }, delay);
