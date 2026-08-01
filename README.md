@@ -19,6 +19,7 @@ Browser                               OpenAB Backend
 │  ├── chat.js      SSE stream     │      │   completions    │
 │  ├── expression.js  emotions     │      └──────────────────┘
 │  ├── live2d-scene.js  PixiJS App │
+│  ├── live2d-profile.js adapter   │
 │  ├── live2d-anim.js  idle        │
 │  └── settings.js  localStorage   │
 └──────────────────────────────────┘
@@ -27,6 +28,7 @@ Browser                               OpenAB Backend
 - **Live2D Scene**: PixiJS v8 Application + untitled-pixi-live2d-engine sprite (CDN), wraps Cubism 5 Core WASM. Idle animations (breathing, blinking, body sway) on top.
 - **Chat**: SSE streaming via `fetch()` + `ReadableStream` — same parser as VRM companion
 - **Expressions**: 8 emotion tags (`[joy]`, `[sadness]`, ...) parsed from responses; `{ static, dynamic }` structure; lerp for static, sine oscillation for dynamic.
+- **Model profiles (P2a)**: application code expresses semantic intent—such as `joy`, `blink`, `gaze`, and `speak`—while a checked-in model profile owns Cubism parameter IDs, calibrated ranges, assets, layout, capabilities, and expression recipes. This keeps a second model from leaking model-specific bindings across the app.
 - **Settings**: endpoint/background in localStorage; bearer tokens remain in memory for one session only. HTTPS is required except for localhost development.
 
 ### Why untitled-engine
@@ -58,6 +60,28 @@ node dev-server.mjs
 files directly. It does not start `dev-server.mjs` or a local gateway proxy.
 The gateway connection uses the browser's normal TLS checks.
 
+The desktop transport uses streamed SSE deltas for immediate rendering. Its
+native request completion also returns accumulated text as a fallback, so a
+missed renderer IPC event cannot leave a completed reply blank. History uses
+the same completed response path.
+
+### P2a model and expression profiles
+
+P2a introduces a model-specific boundary under
+`profiles/live2d/<profile-id>/`:
+
+- `model-profile.js` declares the licensed model asset, layout, semantic
+  capabilities, and Cubism parameter bindings.
+- `expression-profile.js` defines the calibrated baseline and expression
+  recipes for that model.
+- `js/live2d-profile.js` validates and resolves those profiles before the
+  scene, animation, or expression layers use them.
+
+The initial migrated profile is `jellyfish-girl`. See
+[`docs/p2-model-expression-profiles.md`](docs/p2-model-expression-profiles.md)
+for the semantic contract, validation rules, and the deferred work for native
+expressions, motions, and second-model onboarding.
+
 ### Runtime asset gate
 
 Cubism Core and the JellyFish Girl model have separate licences and are not
@@ -79,7 +103,18 @@ openab-companion-live2d/
 │   ├── expression.js       Emotion tag parser → engine params (lerp + sine)
 │   ├── settings.js         localStorage persistence
 │   ├── live2d-scene.js     PixiJS App init, model load, render loop
+│   ├── live2d-profile.js   Profile loader, validation, semantic bindings
 │   └── live2d-anim.js      Sine-driven idle animations
+├── profiles/
+│   └── live2d/jellyfish-girl/
+│       ├── model-profile.js       Model asset, layout, capabilities, bindings
+│       └── expression-profile.js  Calibrated expression recipes
+├── electron/
+│   ├── main.cjs             Native window and SSE transport
+│   ├── preload.cjs          Safe renderer bridge with completion fallback
+│   └── window-state.cjs     Window residency and restore state
+├── docs/
+│   └── p2-model-expression-profiles.md  P2a contract and migration record
 ├── lib/
 │   ├── README.md           Cubism Core installation notes
 │   └── LICENSE.md          Live2D SDK license notice
@@ -100,6 +135,19 @@ openab-companion-live2d/
 | PixiJS v8 | `cdn.jsdelivr.net` (CDN) | Render pipeline |
 | untitled-pixi-live2d-engine v1.3.1 | `cdn.jsdelivr.net` (CDN) | Live2D → PixiJS abstraction |
 | Cubism Core WASM 5.1.0 | local licensed install | Required by untitled-engine |
+
+## Verification
+
+```bash
+npm test                    # unit and transport/profile regression tests
+npm run lint                # static project checks
+npm run check:assets        # licensed Cubism/model asset gate
+npm run build:desktop-assets
+npm run dev:electron        # local desktop regression
+```
+
+For a GUI regression, verify one reply appears in the chat bubble and
+History, then confirm an emotion tag and blink can coexist during that reply.
 
 ## License
 
