@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, Menu, nativeImage, screen, Tray } = require
 const path = require('node:path');
 const { normalizeBounds, readWindowState, writeWindowState } = require('./window-state.cjs');
 const { parseSseFieldLine, isStreamDone } = require('./sse.cjs');
+const { getRequestedProfileId } = require('./profile-selection.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'desktop-dist');
@@ -140,7 +141,10 @@ async function createWindow() {
     hideCompanion();
   });
 
-  await petWindow.loadFile(path.join(DIST, 'index.html'));
+  const profileId = getRequestedProfileId(process.argv);
+  const page = path.join(DIST, 'index.html');
+  await petWindow.loadFile(page, profileId ? { query: { profile: profileId } } : undefined);
+  if (profileId) console.log('[electron] requested profile:', profileId);
   console.log('[electron] bridge available:', await petWindow.webContents.executeJavaScript('typeof window.jelliiDesktop?.streamChat'));
   // Desktop pet: prefer the strongest standard Electron layer over normal apps.
   petWindow.setAlwaysOnTop(true, 'screen-saver');

@@ -1,5 +1,13 @@
 const { contextBridge, ipcRenderer } = require('electron');
-const { reconcileStreamCompletion } = require('./stream-completion.cjs');
+
+// Sandboxed Electron preloads may only require Electron's exposed APIs; keep
+// this tiny completion decision local rather than importing a sibling module.
+function reconcileStreamCompletion({ receivedDelta, receivedDone, fullText }) {
+  return {
+    fallbackText: !receivedDelta && typeof fullText === 'string' && fullText ? fullText : null,
+    shouldComplete: !receivedDone,
+  };
+}
 contextBridge.exposeInMainWorld('jelliiDesktop', {
   openHistory: () => ipcRenderer.invoke('companion:open-history'),
   hidePet: () => ipcRenderer.invoke('companion:hide-pet'),

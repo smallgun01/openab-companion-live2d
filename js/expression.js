@@ -13,10 +13,7 @@
  */
 
 import { setParameter, getParameter, hasParameters } from './live2d-scene.js';
-import {
-  EMOTION_MAP,
-  NEUTRAL_BASELINE,
-} from '../profiles/live2d/jellyfish-girl/expression-profile.js';
+import { getActiveExpressionProfile } from './live2d-profile.js';
 
 // Profile recipe shape: static target values and optional dynamic
 // `{ parameterId: [amplitude, periodSeconds, phaseOffset] }` oscillations.
@@ -56,6 +53,7 @@ export function getExpressionParamKeys() {
  */
 export function tickExpressionDynamic(nowMs) {
   if (!currentEmotion || !hasParameters()) return;
+  const { catalog: EMOTION_MAP, baseline: NEUTRAL_BASELINE } = getActiveExpressionProfile();
   const entry = EMOTION_MAP[currentEmotion];
   if (!entry || !entry.dynamic) return;
 
@@ -73,6 +71,8 @@ export function tickExpressionDynamic(nowMs) {
 
 export function parseAndApply(text) {
   if (!text || !hasParameters()) return text;
+
+  const { catalog: EMOTION_MAP } = getActiveExpressionProfile();
 
   const tags = [];
   const cleaned = text.replace(TAG_RE, (match, tag) => {
@@ -98,6 +98,8 @@ export function parseAndApply(text) {
 /** Apply a client or model expression by key. */
 export function applyExpression(emotionKey) {
   if (!hasParameters()) return;
+
+  const { catalog: EMOTION_MAP, baseline: NEUTRAL_BASELINE } = getActiveExpressionProfile();
 
   const key = EMOTION_MAP[emotionKey] ? emotionKey : 'neutral';
   const entry = EMOTION_MAP[key] || EMOTION_MAP.neutral;

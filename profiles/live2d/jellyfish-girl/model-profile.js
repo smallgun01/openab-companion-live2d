@@ -1,3 +1,5 @@
+import { EMOTION_MAP, NEUTRAL_BASELINE } from './expression-profile.js';
+
 /** JellyFish Girl's model-specific Live2D capability and binding data. */
 export const JELLYFISH_GIRL_PROFILE = Object.freeze({
   schemaVersion: 1,
@@ -21,4 +23,5 @@ export const JELLYFISH_GIRL_PROFILE = Object.freeze({
     nativeExpressions: false,
     motions: false,
   },
+  expressions: { catalog: EMOTION_MAP, baseline: NEUTRAL_BASELINE },
 });

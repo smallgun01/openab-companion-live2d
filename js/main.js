@@ -10,6 +10,7 @@ import { getSettings, saveSettings } from './settings.js';
 import { clearRetryTimer } from './retry-timer.js';
 import { createRequestGate } from './request-lifecycle.js';
 import { retryExhaustedMessage } from './retry-policy.js';
+import { setActiveProfile } from './live2d-profile.js';
 
 // Dynamic imports — Live2D module may fail (SDK not set up); chat always works
 let initScene, setParameter, setBackgroundColor, hasParameters, getModel, dispose, getLastInitError;
@@ -98,6 +99,12 @@ const saveSettingsBtn = document.getElementById('settings-save');
 async function init() {
   try {
     settings = getSettings();
+
+    // Development-only profile selection. A full page reload is intentional
+    // at this stage: it gives the current renderer a clean destruction path
+    // before P2b introduces live in-process model switching.
+    const requestedProfileId = new URLSearchParams(window.location.search).get('profile');
+    if (requestedProfileId) setActiveProfile(requestedProfileId);
 
     // Wait for Live2D module to load (or fail)
     await live2dReady;

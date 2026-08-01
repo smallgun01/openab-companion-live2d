@@ -2,8 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  DEFAULT_PROFILE_ID,
   JELLYFISH_GIRL_PROFILE,
+  getActiveExpressionProfile,
   getBinding,
+  getActiveProfile,
+  listProfiles,
+  setActiveProfile,
   validateProfile,
 } from '../js/live2d-profile.js';
 import {
@@ -11,10 +16,30 @@ import {
   NEUTRAL_BASELINE,
 } from '../profiles/live2d/jellyfish-girl/expression-profile.js';
 import { blinkAperture, resetBlinkState } from '../js/live2d-anim.js';
+import { getProfile } from '../profiles/live2d/registry.js';
+import { SHIZUKU_PROFILE } from '../profiles/live2d/shizuku/model-profile.js';
 
 test('JellyFish Girl profile is structurally valid', () => {
   assert.deepEqual(validateProfile(JELLYFISH_GIRL_PROFILE), { valid: true, errors: [] });
   assert.equal(JELLYFISH_GIRL_PROFILE.assets.model, 'models/jellyfish-girl/jellyfishgirl.model3.json');
+});
+
+test('profile selection is registry-backed and rejects unknown IDs', () => {
+  assert.deepEqual(listProfiles().map((profile) => profile.id), [DEFAULT_PROFILE_ID, SHIZUKU_PROFILE.id]);
+  assert.equal(getProfile(DEFAULT_PROFILE_ID), JELLYFISH_GIRL_PROFILE);
+  assert.equal(setActiveProfile(DEFAULT_PROFILE_ID), JELLYFISH_GIRL_PROFILE);
+  assert.equal(getActiveProfile(), JELLYFISH_GIRL_PROFILE);
+  assert.throws(() => setActiveProfile('not-a-profile'), /Unknown Live2D profile/);
+  assert.equal(getActiveProfile(), JELLYFISH_GIRL_PROFILE);
+});
+
+test('Shizuku profile is independently valid with an explicit neutral-only downgrade', () => {
+  assert.deepEqual(validateProfile(SHIZUKU_PROFILE), { valid: true, errors: [] });
+  assert.equal(setActiveProfile(SHIZUKU_PROFILE.id), SHIZUKU_PROFILE);
+  assert.equal(getActiveExpressionProfile().catalog.neutral.static.PARAM_MOUTH_OPEN_Y, 0);
+  assert.deepEqual(SHIZUKU_PROFILE.capabilities.expressions, ['neutral']);
+  assert.equal(SHIZUKU_PROFILE.capabilities.motions, true);
+  setActiveProfile(DEFAULT_PROFILE_ID);
 });
 
 test('semantic bindings resolve to calibrated Cubism parameters', () => {
