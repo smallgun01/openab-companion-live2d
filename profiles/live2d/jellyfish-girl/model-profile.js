@@ -21,6 +21,7 @@ export const JELLYFISH_GIRL_PROFILE = Object.freeze({
   capabilities: {
     expressions: ['neutral', 'joy', 'sadness', 'anger', 'surprise', 'fear', 'disgust', 'smirk', 'thinking'],
     nativeExpressions: false,
+    lipSync: false,
     motions: false,
   },
   expressions: { catalog: EMOTION_MAP, baseline: NEUTRAL_BASELINE },

@@ -21,7 +21,16 @@ export const SHIZUKU_PROFILE = Object.freeze({
   capabilities: {
     expressions: ['neutral'],
     nativeExpressions: false,
+    // The model has a Cubism LipSync group, but Companion has no audio
+    // amplitude source. Mouth motion inside native clips is not lip-sync.
+    lipSync: false,
     motions: true,
+  },
+  nativeMotions: {
+    idle: { group: 'Idle', index: 0, loop: true },
+    tap: { group: 'Tap', index: 0, loop: false },
+    flickUp: { group: 'FlickUp', index: 0, loop: false },
+    flick3: { group: 'Flick3', index: 0, loop: false },
   },
   expressions: { catalog: EMOTION_MAP, baseline: NEUTRAL_BASELINE },
 });

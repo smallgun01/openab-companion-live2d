@@ -12,7 +12,7 @@
 
 import { setParameter, getParameter, hasParameters } from './live2d-scene.js';
 import { isExpressionActive, getExpressionParamKeys, tickExpressionDynamic } from './expression.js';
-import { requireBinding } from './live2d-profile.js';
+import { requireBinding, supportsCapability } from './live2d-profile.js';
 
 // ── Configuration ──────────────────────────────────────
 // Profile ranges may use degree-scale values; do not assume 0–1.
@@ -32,6 +32,7 @@ const HEAD_SWAY_AMPLITUDE = 3.0;  // degrees
 let idleRAF = null;
 let idleStartTime = 0;
 let idleActive = false;
+let parameterIdleActive = true;
 
 // Blink state machine
 let blinkTimer = null;
@@ -46,7 +47,7 @@ let blinkPreEyeR = 1;
  * Start all idle animations: breathing, blinking, body sway.
  * Safe to call multiple times — subsequent calls are no-ops.
  */
-export function startIdleAnimations() {
+export function startIdleAnimations({ parameterIdle = true } = {}) {
   if (idleActive) return;
   if (!hasParameters()) {
     console.warn('[live2d-anim] Cannot start idle — no model parameters');
@@ -54,6 +55,7 @@ export function startIdleAnimations() {
   }
 
   idleActive = true;
+  parameterIdleActive = parameterIdle;
   idleStartTime = performance.now();
 
   // Ensure eyes start open (model defaults to 0 = closed)
@@ -72,6 +74,7 @@ export function startIdleAnimations() {
  */
 export function stopIdleAnimations() {
   idleActive = false;
+  parameterIdleActive = true;
 
   if (idleRAF) {
     cancelAnimationFrame(idleRAF);
@@ -115,7 +118,9 @@ export function isPlaying() {
  * @param {number} amplitude — normalized 0.0–1.0 mouth-open amplitude
  */
 export function lipSync(amplitude) {
-  // Stub — Post-MVP implementation
+  // Mouth-open rigging alone is not an operational lip-sync capability.
+  // Enable this only when an audio-amplitude pipeline is deliberately added.
+  if (!supportsCapability('lipSync')) return;
   const clamped = Math.max(0, Math.min(1, amplitude));
   setParameter(requireBinding('lipSync.open').id, clamped);
 }
@@ -135,19 +140,19 @@ function tick(now) {
   const breath = requireBinding('idle.breath');
   const bodySway = requireBinding('idle.bodySway');
   const headSway = requireBinding('idle.headSway');
-  if (!exprKeys.has(breath.id)) {
+  if (parameterIdleActive && !exprKeys.has(breath.id)) {
     const breathPhase = (elapsed % BREATH_CYCLE_S) / BREATH_CYCLE_S;
     setParameter(breath.id, 0.5 + Math.sin(breathPhase * Math.PI * 2) * BREATH_AMPLITUDE * 0.5);
   }
 
   // ── Body sway (yields to expression) ──
-  if (!exprKeys.has(bodySway.id)) {
+  if (parameterIdleActive && !exprKeys.has(bodySway.id)) {
     const swayPhase = (elapsed % SWAY_PERIOD_S) / SWAY_PERIOD_S;
     setParameter(bodySway.id, Math.sin(swayPhase * Math.PI * 2) * SWAY_AMPLITUDE);
   }
 
   // ── Head sway (yields to expression) ──
-  if (!exprKeys.has(headSway.id)) {
+  if (parameterIdleActive && !exprKeys.has(headSway.id)) {
     const headPhase = (elapsed % HEAD_SWAY_PERIOD_S) / HEAD_SWAY_PERIOD_S;
     setParameter(headSway.id, Math.sin(headPhase * Math.PI * 2) * HEAD_SWAY_AMPLITUDE);
   }

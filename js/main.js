@@ -10,10 +10,10 @@ import { getSettings, saveSettings } from './settings.js';
 import { clearRetryTimer } from './retry-timer.js';
 import { createRequestGate } from './request-lifecycle.js';
 import { retryExhaustedMessage } from './retry-policy.js';
-import { setActiveProfile } from './live2d-profile.js';
+import { getActiveProfile, setActiveProfile } from './live2d-profile.js';
 
 // Dynamic imports — Live2D module may fail (SDK not set up); chat always works
-let initScene, setParameter, setBackgroundColor, hasParameters, getModel, dispose, getLastInitError;
+let initScene, setParameter, setBackgroundColor, hasParameters, getModel, dispose, getLastInitError, playNativeMotion;
 let live2dAvailable = false;
 let live2dErrorMsg = '';
 
@@ -27,6 +27,7 @@ const live2dReady = (async () => {
     getModel = mod.getModel;
     dispose = mod.dispose;
     getLastInitError = mod.getLastInitError;
+    playNativeMotion = mod.playNativeMotion;
     live2dAvailable = true;
   } catch (err) {
     live2dErrorMsg = err.message || String(err);
@@ -122,7 +123,11 @@ async function init() {
 
         // Start idle animations after model is loaded
         await animReady;
-        if (startIdleAnimations) startIdleAnimations();
+        // Native model motion is opt-in profile data. The adapter does not
+        // infer that a model folder's motion files should autoplay.
+        const nativeIdleStarted = getActiveProfile().capabilities.motions
+          && await playNativeMotion?.('idle');
+        if (startIdleAnimations) startIdleAnimations({ parameterIdle: !nativeIdleStarted });
       } else {
         modelPrompt.classList.remove('hidden');
         const p = modelPrompt.querySelector('p');

@@ -49,6 +49,11 @@ export function resolveSupportedExpression(expressionKey) {
     : 'neutral';
 }
 
+/** Whether the active profile advertises an operational (not merely rigged) capability. */
+export function supportsCapability(name) {
+  return activeProfile.capabilities?.[name] === true;
+}
+
 export function getBinding(name) {
   return activeProfile.bindings[name] || null;
 }
@@ -75,6 +80,11 @@ export function validateProfile(profile = activeProfile) {
   for (const expression of profile?.capabilities?.expressions || []) {
     if (!profile?.expressions?.catalog?.[expression]) {
       errors.push(`capabilities.expressions declares missing catalog entry: ${expression}`);
+    }
+  }
+  for (const [name, motion] of Object.entries(profile?.nativeMotions || {})) {
+    if (!motion?.group || !Number.isInteger(motion.index) || motion.index < 0) {
+      errors.push(`nativeMotions.${name} requires a motion group and non-negative index`);
     }
   }
   for (const [name, binding] of Object.entries(profile?.bindings || {})) {

@@ -285,6 +285,33 @@ export function getModel() {
 }
 
 /**
+ * Play a profile-declared Cubism motion through the engine's native adapter.
+ * The renderer never guesses a group name or file path from a model folder.
+ */
+export async function playNativeMotion(name) {
+  const motion = getActiveProfile().nativeMotions?.[name];
+  if (!motion || !live2dModel?.motion) return false;
+  try {
+    const started = Boolean(await live2dModel.motion(motion.group, motion.index, undefined, {
+      loop: motion.loop === true,
+      resetExpression: false,
+    }));
+    console.log(`[live2d-scene] Native motion ${started ? 'started' : 'not started'}:`, name, motion);
+    return started;
+  } catch (error) {
+    // Native clips are optional profile capability; a bad clip must not make
+    // an otherwise renderable companion fail its whole scene initialization.
+    console.warn('[live2d-scene] Native motion failed:', name, error?.message || error);
+    return false;
+  }
+}
+
+/** Stop profile-native motions before renderer disposal or a clean reload. */
+export function stopNativeMotions() {
+  live2dModel?.stopMotions?.();
+}
+
+/**
  * Get the PIXI application instance.
  *
  * @returns {import('pixi.js').Application|null}
@@ -341,6 +368,7 @@ export async function setBackgroundImage(url) {
 export function dispose() {
   window.removeEventListener('resize', _onResize);
   if (live2dModel) {
+    stopNativeMotions();
     try { live2dModel.destroy({ texture: true }); } catch {}
     live2dModel = null;
   }

@@ -10,6 +10,7 @@ import {
   listProfiles,
   resolveSupportedExpression,
   setActiveProfile,
+  supportsCapability,
   validateProfile,
 } from '../js/live2d-profile.js';
 import {
@@ -42,8 +43,19 @@ test('Shizuku profile is independently valid with an explicit neutral-only downg
   assert.equal(getActiveExpressionProfile().catalog.neutral.static.PARAM_MOUTH_OPEN_Y, 0);
   assert.deepEqual(SHIZUKU_PROFILE.capabilities.expressions, ['neutral']);
   assert.equal(SHIZUKU_PROFILE.capabilities.motions, true);
+  assert.equal(SHIZUKU_PROFILE.capabilities.lipSync, false);
+  assert.deepEqual(SHIZUKU_PROFILE.nativeMotions.idle, { group: 'Idle', index: 0, loop: true });
   assert.equal(resolveSupportedExpression('joy'), 'neutral');
   assert.equal(resolveSupportedExpression('neutral'), 'neutral');
+  assert.equal(supportsCapability('lipSync'), false);
+});
+
+test('native motion declarations reject malformed engine references', () => {
+  const profile = structuredClone(SHIZUKU_PROFILE);
+  profile.nativeMotions.idle.index = -1;
+  const report = validateProfile(profile);
+  assert.equal(report.valid, false);
+  assert.match(report.errors.at(-1), /nativeMotions\.idle/);
 });
 
 test('capability declarations must match the profile-owned expression catalog', () => {

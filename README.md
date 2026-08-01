@@ -79,11 +79,14 @@ P2a introduces a model-specific boundary under
 
 P2b adds an explicit registry with `jellyfish-girl-v1` as the default and
 `shizuku-v1` as a second, independent profile. Shizuku is declared
-neutral-expression-only with native-motion capability; it does not reuse
-JellyFish Girl parameter recipes. See
+neutral-expression-only and plays its profile-declared Cubism `Idle` clip
+through the native-motion adapter; it does not reuse JellyFish Girl parameter
+recipes. Its model has mouth rigging, but Companion exposes no audio-amplitude
+pipeline, so `lipSync` is explicitly `false`—motion-driven mouth movement is
+not presented as speaking. See
 [`docs/p2-model-expression-profiles.md`](docs/p2-model-expression-profiles.md)
-for the semantic contract, validation rules, and the deferred work for native
-expressions, motions, and second-model onboarding.
+for the semantic contract, validation rules, and deferred native expressions
+and second-model onboarding work.
 
 For development regression, Electron accepts an explicit profile ID:
 
