@@ -1,4 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const { reconcileStreamCompletion } = require('./stream-completion.cjs');
 contextBridge.exposeInMainWorld('jelliiDesktop', {
   openHistory: () => ipcRenderer.invoke('companion:open-history'),
   hidePet: () => ipcRenderer.invoke('companion:hide-pet'),
@@ -26,10 +27,9 @@ contextBridge.exposeInMainWorld('jelliiDesktop', {
         // IPC is the low-latency path.  The completed native request is a
         // reliable fallback: if Electron drops a renderer event, render the
         // accumulated text before completing instead of leaving a blank pet.
-        if (!receivedDelta && typeof result.fullText === 'string' && result.fullText) {
-          onDelta?.(result.fullText);
-        }
-        if (!receivedDone) onDone?.();
+        const completion = reconcileStreamCompletion({ receivedDelta, receivedDone, fullText: result.fullText });
+        if (completion.fallbackText) onDelta?.(completion.fallbackText);
+        if (completion.shouldComplete) onDone?.();
       }
     } finally {
       ipcRenderer.removeListener('companion:chat-event', listener);

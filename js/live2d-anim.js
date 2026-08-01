@@ -82,10 +82,20 @@ export function stopIdleAnimations() {
     blinkTimer = null;
   }
 
-  // Reset idle parameters
+  // A blink can be interrupted while closed. Restore its captured expression
+  // aperture, then clear the state machine so the next start begins cleanly.
+  const reset = resetBlinkState({ blinkPhase, blinkStartTime, preEyeL: blinkPreEyeL, preEyeR: blinkPreEyeR });
+  const restoreEyeL = reset.restoreEyeL;
+  const restoreEyeR = reset.restoreEyeR;
+  blinkPhase = reset.phase;
+  blinkStartTime = reset.startTime;
+  blinkPreEyeL = reset.preEyeL;
+  blinkPreEyeR = reset.preEyeR;
+
+  // Reset idle parameters. Eyes belong to the active expression, not idle.
   setParameter(requireBinding('idle.breath').id, 0);
-  setParameter(requireBinding('blink.left').id, requireBinding('blink.left').open);
-  setParameter(requireBinding('blink.right').id, requireBinding('blink.right').open);
+  setParameter(requireBinding('blink.left').id, restoreEyeL);
+  setParameter(requireBinding('blink.right').id, restoreEyeR);
   setParameter(requireBinding('idle.bodySway').id, 0);
   setParameter(requireBinding('idle.headSway').id, 0);
 
@@ -221,4 +231,16 @@ function easeOutQuad(t) {
 export function blinkAperture(preBlinkAperture, progress, phase) {
   if (phase === 'closing') return preBlinkAperture * (1 - easeInQuad(progress));
   return preBlinkAperture * easeOutQuad(progress);
+}
+
+/** Pure contract for an interrupted blink; kept exportable for regression tests. */
+export function resetBlinkState(state) {
+  return {
+    phase: 'idle',
+    startTime: 0,
+    preEyeL: 1,
+    preEyeR: 1,
+    restoreEyeL: state.preEyeL,
+    restoreEyeR: state.preEyeR,
+  };
 }

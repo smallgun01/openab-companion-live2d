@@ -134,7 +134,7 @@ export async function sendMessage({ text, endpoint, token, onChunk, onDone, onEr
         switch (field.toLowerCase()) {
           case 'event':
             // event: done → treat as stream end (even before data: [DONE])
-            if (value === 'done') {
+            if (value.trim().toLowerCase() === 'done') {
               reader.cancel();
               onDone?.(fullText);
               return;

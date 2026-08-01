@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, Menu, nativeImage, screen, Tray } = require('electron');
 const path = require('node:path');
 const { normalizeBounds, readWindowState, writeWindowState } = require('./window-state.cjs');
+const { parseSseFieldLine, isStreamDone } = require('./sse.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'desktop-dist');
@@ -14,7 +15,6 @@ let isQuitting = false;
 let saveWindowStateTimer;
 let lastPetBounds;
 const CANCELLED_REQUEST = Symbol('companion:cancelled');
-const SSE_FIELD_RE = /^(data|event|id|retry):\s*(.*)$/i;
 // Main-process ownership: this map owns the real HTTP AbortController. Renderer
 // request gates only suppress stale UI callbacks and cannot stop this fetch alone.
 const activeChatRequests = new Map();
@@ -69,20 +69,17 @@ ipcMain.handle('companion:stream-chat', async (event, request) => {
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
       for (const raw of lines) {
-        const line = raw.trim();
-        const match = line.match(SSE_FIELD_RE);
-        if (!match) continue;
-        const [, field, value] = match;
+        const field = parseSseFieldLine(raw);
+        if (!field) continue;
         // Gateway may finish a stream with `event: done` and retain the HTTP
         // connection.  Match the browser transport so the renderer is not
         // left in its streaming/locked state until the timeout fires.
-        if (field.toLowerCase() === 'event' && value === 'done') {
+        if (isStreamDone(field)) {
           emitChat(event.sender, requestId, 'done');
           return { ok: true, fullText };
         }
-        if (field.toLowerCase() !== 'data') continue;
-        const data = value;
-        if (data === '[DONE]') { emitChat(event.sender, requestId, 'done'); return { ok: true, fullText }; }
+        if (field.field !== 'data') continue;
+        const data = field.value;
         try {
           const delta = JSON.parse(data)?.choices?.[0]?.delta?.content;
           if (typeof delta === 'string' && delta) {

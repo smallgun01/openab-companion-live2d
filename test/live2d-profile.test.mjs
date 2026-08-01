@@ -10,7 +10,7 @@ import {
   EMOTION_MAP,
   NEUTRAL_BASELINE,
 } from '../profiles/live2d/jellyfish-girl/expression-profile.js';
-import { blinkAperture } from '../js/live2d-anim.js';
+import { blinkAperture, resetBlinkState } from '../js/live2d-anim.js';
 
 test('JellyFish Girl profile is structurally valid', () => {
   assert.deepEqual(validateProfile(JELLYFISH_GIRL_PROFILE), { valid: true, errors: [] });
@@ -45,4 +45,10 @@ test('blink preserves the active expression aperture instead of reopening to neu
   assert.equal(blinkAperture(0.55, 1, 'closing'), 0);
   assert.equal(blinkAperture(0.55, 1, 'opening'), 0.55);
   assert.equal(blinkAperture(0.8, 1, 'opening'), 0.8);
+});
+
+test('an interrupted blink resets its state while restoring the expression aperture', () => {
+  assert.deepEqual(resetBlinkState({ phase: 'closing', startTime: 42, preEyeL: 0.55, preEyeR: 0.6 }), {
+    phase: 'idle', startTime: 0, preEyeL: 1, preEyeR: 1, restoreEyeL: 0.55, restoreEyeR: 0.6,
+  });
 });
