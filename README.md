@@ -28,7 +28,7 @@ Browser                               OpenAB Backend
 - **Live2D Scene**: PixiJS v8 Application + untitled-pixi-live2d-engine sprite (CDN), wraps Cubism 5 Core WASM. Idle animations (breathing, blinking, body sway) on top.
 - **Chat**: SSE streaming via `fetch()` + `ReadableStream` — same parser as VRM companion
 - **Expressions**: 8 emotion tags (`[joy]`, `[sadness]`, ...) parsed from responses; `{ static, dynamic }` structure; lerp for static, sine oscillation for dynamic.
-- **Model profiles (P2a)**: application code expresses semantic intent—such as `joy`, `blink`, `gaze`, and `speak`—while a checked-in model profile owns Cubism parameter IDs, calibrated ranges, assets, layout, capabilities, and expression recipes. This keeps a second model from leaking model-specific bindings across the app.
+- **Model profiles (P2b)**: application code expresses semantic intent—such as `joy`, `blink`, `gaze`, and `speak`—while a checked-in model profile owns Cubism parameter IDs, calibrated ranges, assets, layout, capabilities, and expression recipes. A registry selects the active model explicitly, so the same Jellii backend can render JellyFish Girl or Shizuku without leaking model-specific bindings across the app.
 - **Settings**: endpoint/background in localStorage; bearer tokens remain in memory for one session only. HTTPS is required except for localhost development.
 
 ### Why untitled-engine
@@ -65,7 +65,7 @@ native request completion also returns accumulated text as a fallback, so a
 missed renderer IPC event cannot leave a completed reply blank. History uses
 the same completed response path.
 
-### P2a model and expression profiles
+### P2a/P2b model and expression profiles
 
 P2a introduces a model-specific boundary under
 `profiles/live2d/<profile-id>/`:
@@ -77,10 +77,25 @@ P2a introduces a model-specific boundary under
 - `js/live2d-profile.js` validates and resolves those profiles before the
   scene, animation, or expression layers use them.
 
-The initial migrated profile is `jellyfish-girl`. See
+P2b adds an explicit registry with `jellyfish-girl-v1` as the default and
+`shizuku-v1` as a second, independent profile. Shizuku is declared
+neutral-expression-only with native-motion capability; it does not reuse
+JellyFish Girl parameter recipes. See
 [`docs/p2-model-expression-profiles.md`](docs/p2-model-expression-profiles.md)
 for the semantic contract, validation rules, and the deferred work for native
 expressions, motions, and second-model onboarding.
+
+For development regression, Electron accepts an explicit profile ID:
+
+```bash
+npm run dev:electron -- --profile=jellyfish-girl-v1
+npm run dev:electron -- --profile=shizuku-v1
+```
+
+The ID travels from Electron's command line into the renderer query, where the
+registry validates it. An unknown ID fails fast; it does not silently load the
+default model. The intended runtime sequence is A→B→A: JellyFish Girl, Shizuku,
+then JellyFish Girl again.
 
 ### Runtime asset gate
 
@@ -106,12 +121,18 @@ openab-companion-live2d/
 │   ├── live2d-profile.js   Profile loader, validation, semantic bindings
 │   └── live2d-anim.js      Sine-driven idle animations
 ├── profiles/
-│   └── live2d/jellyfish-girl/
-│       ├── model-profile.js       Model asset, layout, capabilities, bindings
-│       └── expression-profile.js  Calibrated expression recipes
+│   └── live2d/
+│       ├── registry.js                    Explicit profile catalog
+│       ├── jellyfish-girl/                Default model profile
+│       │   ├── model-profile.js
+│       │   └── expression-profile.js
+│       └── shizuku/                       Independent sample-model profile
+│           ├── model-profile.js
+│           └── expression-profile.js
 ├── electron/
 │   ├── main.cjs             Native window and SSE transport
 │   ├── preload.cjs          Safe renderer bridge with completion fallback
+│   ├── profile-selection.cjs  Development profile CLI parsing
 │   └── window-state.cjs     Window residency and restore state
 ├── docs/
 │   └── p2-model-expression-profiles.md  P2a contract and migration record
@@ -122,7 +143,8 @@ openab-companion-live2d/
 │   └── Core/
 │       └── live2dcubismcore.min.js   ← required by untitled-engine
 ├── models/
-│   └── jellyfish-girl/     Licensed JellyFish Girl model (not committed)
+│   ├── jellyfish-girl/     Licensed JellyFish Girl model (not committed)
+│   └── shizuku/            Cubism sample runtime model (not committed)
 ├── motions/                Post-MVP: .motion3.json files
 ├── LICENSE                 MIT
 └── README.md
