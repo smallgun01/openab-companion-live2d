@@ -8,6 +8,7 @@ import {
   getBinding,
   getActiveProfile,
   listProfiles,
+  resolveSupportedExpression,
   setActiveProfile,
   validateProfile,
 } from '../js/live2d-profile.js';
@@ -18,6 +19,8 @@ import {
 import { blinkAperture, resetBlinkState } from '../js/live2d-anim.js';
 import { getProfile } from '../profiles/live2d/registry.js';
 import { SHIZUKU_PROFILE } from '../profiles/live2d/shizuku/model-profile.js';
+
+test.afterEach(() => setActiveProfile(DEFAULT_PROFILE_ID));
 
 test('JellyFish Girl profile is structurally valid', () => {
   assert.deepEqual(validateProfile(JELLYFISH_GIRL_PROFILE), { valid: true, errors: [] });
@@ -39,7 +42,16 @@ test('Shizuku profile is independently valid with an explicit neutral-only downg
   assert.equal(getActiveExpressionProfile().catalog.neutral.static.PARAM_MOUTH_OPEN_Y, 0);
   assert.deepEqual(SHIZUKU_PROFILE.capabilities.expressions, ['neutral']);
   assert.equal(SHIZUKU_PROFILE.capabilities.motions, true);
-  setActiveProfile(DEFAULT_PROFILE_ID);
+  assert.equal(resolveSupportedExpression('joy'), 'neutral');
+  assert.equal(resolveSupportedExpression('neutral'), 'neutral');
+});
+
+test('capability declarations must match the profile-owned expression catalog', () => {
+  const profile = structuredClone(SHIZUKU_PROFILE);
+  profile.capabilities.expressions = ['neutral', 'joy'];
+  const report = validateProfile(profile);
+  assert.equal(report.valid, false);
+  assert.match(report.errors.at(-1), /declares missing catalog entry: joy/);
 });
 
 test('semantic bindings resolve to calibrated Cubism parameters', () => {

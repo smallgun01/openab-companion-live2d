@@ -1,7 +1,9 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// Sandboxed Electron preloads may only require Electron's exposed APIs; keep
-// this tiny completion decision local rather than importing a sibling module.
+// Sandboxed Electron preloads may only require Electron's exposed APIs. Keep
+// this tiny completion decision local: importing a sibling module breaks the
+// bridge under `sandbox: true`, so do not extract it without changing that
+// security boundary and its regression coverage together.
 function reconcileStreamCompletion({ receivedDelta, receivedDone, fullText }) {
   return {
     fallbackText: !receivedDelta && typeof fullText === 'string' && fullText ? fullText : null,

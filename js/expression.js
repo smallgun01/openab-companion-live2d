@@ -13,7 +13,7 @@
  */
 
 import { setParameter, getParameter, hasParameters } from './live2d-scene.js';
-import { getActiveExpressionProfile } from './live2d-profile.js';
+import { getActiveExpressionProfile, resolveSupportedExpression } from './live2d-profile.js';
 
 // Profile recipe shape: static target values and optional dynamic
 // `{ parameterId: [amplitude, periodSeconds, phaseOffset] }` oscillations.
@@ -77,7 +77,7 @@ export function parseAndApply(text) {
   const tags = [];
   const cleaned = text.replace(TAG_RE, (match, tag) => {
     const lower = tag.toLowerCase();
-    tags.push(EMOTION_MAP[lower] ? lower : 'neutral');
+    tags.push(resolveSupportedExpression(EMOTION_MAP[lower] ? lower : 'neutral'));
     return '';
   }).replace(/\s{2,}/g, ' ').trim();
 
@@ -101,7 +101,7 @@ export function applyExpression(emotionKey) {
 
   const { catalog: EMOTION_MAP, baseline: NEUTRAL_BASELINE } = getActiveExpressionProfile();
 
-  const key = EMOTION_MAP[emotionKey] ? emotionKey : 'neutral';
+  const key = resolveSupportedExpression(emotionKey);
   const entry = EMOTION_MAP[key] || EMOTION_MAP.neutral;
   const targetWeights = { ...NEUTRAL_BASELINE, ...(entry.static || entry) };
 

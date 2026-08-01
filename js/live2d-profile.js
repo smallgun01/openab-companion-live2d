@@ -36,6 +36,19 @@ export function getActiveExpressionProfile() {
   return activeProfile.expressions;
 }
 
+/**
+ * Resolve a semantic expression key against the active profile's declared
+ * capabilities. Profiles are the authority: a catalog entry alone must never
+ * enable an expression the model did not explicitly advertise.
+ */
+export function resolveSupportedExpression(expressionKey) {
+  const supported = activeProfile.capabilities?.expressions || [];
+  const catalog = activeProfile.expressions?.catalog || {};
+  return supported.includes(expressionKey) && catalog[expressionKey]
+    ? expressionKey
+    : 'neutral';
+}
+
 export function getBinding(name) {
   return activeProfile.bindings[name] || null;
 }
@@ -56,6 +69,14 @@ export function validateProfile(profile = activeProfile) {
   if (!profile?.id) errors.push('profile id is required');
   if (!profile?.assets?.model) errors.push('assets.model is required');
   if (!profile?.expressions?.catalog?.neutral) errors.push('neutral expression catalog is required');
+  if (!Array.isArray(profile?.capabilities?.expressions) || !profile.capabilities.expressions.includes('neutral')) {
+    errors.push('capabilities.expressions must include neutral');
+  }
+  for (const expression of profile?.capabilities?.expressions || []) {
+    if (!profile?.expressions?.catalog?.[expression]) {
+      errors.push(`capabilities.expressions declares missing catalog entry: ${expression}`);
+    }
+  }
   for (const [name, binding] of Object.entries(profile?.bindings || {})) {
     if (!binding?.id) errors.push(`${name}: Cubism parameter id is required`);
     if (!Array.isArray(binding?.range) || binding.range.length !== 2 || binding.range[0] > binding.range[1]) {
