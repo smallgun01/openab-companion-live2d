@@ -14,12 +14,16 @@ const { getRequestedProfileId } = require('../electron/profile-selection.cjs');
 
 test.afterEach(() => setActiveProfile(DEFAULT_PROFILE_ID));
 
-test('development profile selection carries a known ID into an isolated renderer state', () => {
+test('development profile selection completes the JellyFish Girl → Shizuku → JellyFish Girl gate', () => {
   const profileId = getRequestedProfileId(['electron', 'main.cjs', '--profile=shizuku-v1']);
   assert.equal(profileId, 'shizuku-v1');
   assert.equal(setActiveProfile(profileId).id, 'shizuku-v1');
   assert.equal(getActiveProfile().id, 'shizuku-v1');
   assert.equal(resolveSupportedExpression('joy'), 'neutral');
+
+  setActiveProfile(DEFAULT_PROFILE_ID);
+  assert.equal(getActiveProfile().id, DEFAULT_PROFILE_ID);
+  assert.equal(resolveSupportedExpression('joy'), 'joy');
 });
 
 test('an unknown profile cannot silently select a body during a switch', () => {
