@@ -10,6 +10,7 @@ import {
   EMOTION_MAP,
   NEUTRAL_BASELINE,
 } from '../profiles/live2d/jellyfish-girl/expression-profile.js';
+import { blinkAperture } from '../js/live2d-anim.js';
 
 test('JellyFish Girl profile is structurally valid', () => {
   assert.deepEqual(validateProfile(JELLYFISH_GIRL_PROFILE), { valid: true, errors: [] });
@@ -37,4 +38,11 @@ test('JellyFish Girl expression data remains a complete profile-owned catalog', 
   ]);
   assert.equal(EMOTION_MAP.joy.static.ParamMouthForm, 1);
   assert.equal(NEUTRAL_BASELINE.ParamMouthOpenY, 0);
+});
+
+test('blink preserves the active expression aperture instead of reopening to neutral', () => {
+  assert.equal(blinkAperture(0.55, 0, 'closing'), 0.55);
+  assert.equal(blinkAperture(0.55, 1, 'closing'), 0);
+  assert.equal(blinkAperture(0.55, 1, 'opening'), 0.55);
+  assert.equal(blinkAperture(0.8, 1, 'opening'), 0.8);
 });

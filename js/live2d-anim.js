@@ -125,8 +125,6 @@ function tick(now) {
   const breath = requireBinding('idle.breath');
   const bodySway = requireBinding('idle.bodySway');
   const headSway = requireBinding('idle.headSway');
-  const blinkLeft = requireBinding('blink.left');
-  const blinkRight = requireBinding('blink.right');
   if (!exprKeys.has(breath.id)) {
     const breathPhase = (elapsed % BREATH_CYCLE_S) / BREATH_CYCLE_S;
     setParameter(breath.id, 0.5 + Math.sin(breathPhase * Math.PI * 2) * BREATH_AMPLITUDE * 0.5);
@@ -147,16 +145,11 @@ function tick(now) {
   // ── Expression dynamic oscillation (head sway, body rock, etc.) ──
   tickExpressionDynamic(now);
 
-  // ── Blink (eye open/close yields to expression on those params) ──
-  if (!exprKeys.has(blinkLeft.id) && !exprKeys.has(blinkRight.id)) {
-    tickBlink(now);
-  } else {
-    // Expression controls eyes — skip blink state machine
-    if (blinkPhase !== 'idle') {
-      blinkPhase = 'idle';
-      scheduleNextBlink();
-    }
-  }
+  // ── Blink ────────────────────────────────────────────────
+  // Blink is a short, higher-priority overlay.  It closes from the current
+  // expression's eye aperture and restores that same aperture afterwards;
+  // a sad/angry squint must never jump to the neutral fully-open value.
+  tickBlink(now);
 
   idleRAF = requestAnimationFrame(tick);
 }
@@ -171,10 +164,10 @@ function tickBlink(now) {
 
   switch (blinkPhase) {
     case 'closing': {
-      // 0 → 1: eyes close
-      const value = 1 - easeInQuad(t);  // 1 → 0
-      setParameter(requireBinding('blink.left').id, value);
-      setParameter(requireBinding('blink.right').id, value);
+      // Current expression aperture → closed.  Keep left/right asymmetric
+      // values independent so a smirk does not visibly normalize mid-blink.
+      setParameter(requireBinding('blink.left').id, blinkAperture(blinkPreEyeL, t, 'closing'));
+      setParameter(requireBinding('blink.right').id, blinkAperture(blinkPreEyeR, t, 'closing'));
       if (t >= 1) {
         blinkPhase = 'opening';
         blinkStartTime = now;
@@ -183,9 +176,8 @@ function tickBlink(now) {
     }
     case 'opening': {
       // Restore to pre-blink value (preserves expression eye setting)
-      const value = blinkPreEyeL * easeOutQuad(t);  // 0 → blinkPreEyeL
-      setParameter(requireBinding('blink.left').id, value);
-      setParameter(requireBinding('blink.right').id, blinkPreEyeR * easeOutQuad(t));
+      setParameter(requireBinding('blink.left').id, blinkAperture(blinkPreEyeL, t, 'opening'));
+      setParameter(requireBinding('blink.right').id, blinkAperture(blinkPreEyeR, t, 'opening'));
       if (t >= 1) {
         blinkPhase = 'idle';
         scheduleNextBlink();
@@ -220,4 +212,13 @@ function easeInQuad(t) {
 
 function easeOutQuad(t) {
   return t * (2 - t);
+}
+
+/**
+ * Blink is an overlay on the eye aperture owned by the active expression.
+ * It must always return to the captured aperture rather than neutral open.
+ */
+export function blinkAperture(preBlinkAperture, progress, phase) {
+  if (phase === 'closing') return preBlinkAperture * (1 - easeInQuad(progress));
+  return preBlinkAperture * easeOutQuad(progress);
 }

@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 
 const root = new URL('../', import.meta.url);
 const dist = new URL('../desktop-dist/', import.meta.url);
-const assets = ['index.html', 'history.html', 'css', 'js', 'lib', 'models', 'motions'];
+const assets = ['index.html', 'history.html', 'css', 'js', 'lib', 'models', 'motions', 'profiles'];
 
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });

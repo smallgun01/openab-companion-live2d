@@ -14,6 +14,7 @@ let isQuitting = false;
 let saveWindowStateTimer;
 let lastPetBounds;
 const CANCELLED_REQUEST = Symbol('companion:cancelled');
+const SSE_FIELD_RE = /^(data|event|id|retry):\s*(.*)$/i;
 // Main-process ownership: this map owns the real HTTP AbortController. Renderer
 // request gates only suppress stale UI callbacks and cannot stop this fetch alone.
 const activeChatRequests = new Map();
@@ -62,23 +63,37 @@ ipcMain.handle('companion:stream-chat', async (event, request) => {
 
     const decoder = new TextDecoder();
     let buffer = '';
+    let fullText = '';
     for await (const chunk of response.body) {
       buffer += decoder.decode(chunk, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
       for (const raw of lines) {
         const line = raw.trim();
-        if (!line.startsWith('data:')) continue;
-        const data = line.slice(5).trim();
-        if (data === '[DONE]') { emitChat(event.sender, requestId, 'done'); return { ok: true }; }
+        const match = line.match(SSE_FIELD_RE);
+        if (!match) continue;
+        const [, field, value] = match;
+        // Gateway may finish a stream with `event: done` and retain the HTTP
+        // connection.  Match the browser transport so the renderer is not
+        // left in its streaming/locked state until the timeout fires.
+        if (field.toLowerCase() === 'event' && value === 'done') {
+          emitChat(event.sender, requestId, 'done');
+          return { ok: true, fullText };
+        }
+        if (field.toLowerCase() !== 'data') continue;
+        const data = value;
+        if (data === '[DONE]') { emitChat(event.sender, requestId, 'done'); return { ok: true, fullText }; }
         try {
           const delta = JSON.parse(data)?.choices?.[0]?.delta?.content;
-          if (typeof delta === 'string' && delta) emitChat(event.sender, requestId, 'delta', { delta });
+          if (typeof delta === 'string' && delta) {
+            fullText += delta;
+            emitChat(event.sender, requestId, 'delta', { delta });
+          }
         } catch { /* Ignore non-content SSE payloads. */ }
       }
     }
     emitChat(event.sender, requestId, 'done');
-    return { ok: true };
+    return { ok: true, fullText };
   } catch (error) {
     const cancelled = controller.signal.aborted && controller.signal.reason === CANCELLED_REQUEST;
     return { ok: false, code: cancelled ? 499 : 0, message: cancelled ? 'Request cancelled' : (error?.name === 'AbortError' ? 'Request timeout after 60s' : (error?.message || 'Network error')) };

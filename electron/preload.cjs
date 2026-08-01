@@ -4,15 +4,33 @@ contextBridge.exposeInMainWorld('jelliiDesktop', {
   hidePet: () => ipcRenderer.invoke('companion:hide-pet'),
   cancelChat: (requestId) => ipcRenderer.invoke('companion:cancel-chat', requestId),
   streamChat: async ({ requestId, text, endpoint, token, onDelta, onDone, onError }) => {
+    let receivedDelta = false;
+    let receivedDone = false;
     const listener = (_event, message) => {
       if (message?.requestId !== requestId) return;
-      if (message.type === 'delta') onDelta?.(message.delta);
-      if (message.type === 'done') onDone?.();
+      if (message.type === 'delta') {
+        receivedDelta = true;
+        onDelta?.(message.delta);
+      }
+      if (message.type === 'done') {
+        receivedDone = true;
+        onDone?.();
+      }
     };
     ipcRenderer.on('companion:chat-event', listener);
     try {
       const result = await ipcRenderer.invoke('companion:stream-chat', { requestId, text, endpoint, token });
-      if (!result?.ok) onError?.(result?.code || 0, result?.message || 'Network error');
+      if (!result?.ok) {
+        onError?.(result?.code || 0, result?.message || 'Network error');
+      } else {
+        // IPC is the low-latency path.  The completed native request is a
+        // reliable fallback: if Electron drops a renderer event, render the
+        // accumulated text before completing instead of leaving a blank pet.
+        if (!receivedDelta && typeof result.fullText === 'string' && result.fullText) {
+          onDelta?.(result.fullText);
+        }
+        if (!receivedDone) onDone?.();
+      }
     } finally {
       ipcRenderer.removeListener('companion:chat-event', listener);
     }
