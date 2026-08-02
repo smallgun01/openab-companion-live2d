@@ -10,7 +10,7 @@ import { getSettings, saveSettings } from './settings.js';
 import { clearRetryTimer } from './retry-timer.js';
 import { createRequestGate } from './request-lifecycle.js';
 import { retryExhaustedMessage } from './retry-policy.js';
-import { getActiveProfile, setActiveProfile } from './live2d-profile.js';
+import { DEFAULT_PROFILE_ID, getActiveProfile, listProfiles, setActiveProfile } from './live2d-profile.js';
 
 // Dynamic imports — Live2D module may fail (SDK not set up); chat always works
 let initScene, setParameter, setBackgroundColor, hasParameters, getModel, dispose, getLastInitError, playNativeMotion;
@@ -93,6 +93,7 @@ const settingsClose  = document.getElementById('settings-close');
 const endpointInp    = document.getElementById('setting-endpoint');
 const tokenInp       = document.getElementById('setting-token');
 const bgColorInp     = document.getElementById('setting-bgcolor');
+const profileInp     = document.getElementById('setting-profile');
 const saveSettingsBtn = document.getElementById('settings-save');
 
 /* ── Init ─────────────────────────────────────────────── */
@@ -101,11 +102,22 @@ async function init() {
   try {
     settings = getSettings();
 
-    // Development-only profile selection. A full page reload is intentional
-    // at this stage: it gives the current renderer a clean destruction path
-    // before P2b introduces live in-process model switching.
+    // The command-line query is a development override. Normal users select
+    // a registry profile in Settings; a reload gives the renderer a clean
+    // destruction path rather than attempting an unsafe in-process swap.
     const requestedProfileId = new URLSearchParams(window.location.search).get('profile');
-    if (requestedProfileId) setActiveProfile(requestedProfileId);
+    if (requestedProfileId) {
+      setActiveProfile(requestedProfileId);
+    } else {
+      try {
+        setActiveProfile(settings.profileId);
+      } catch (err) {
+        console.warn('[main] Saved character is unavailable; using default profile:', err.message);
+        settings.profileId = DEFAULT_PROFILE_ID;
+        saveSettings({ profileId: DEFAULT_PROFILE_ID });
+        setActiveProfile(DEFAULT_PROFILE_ID);
+      }
+    }
 
     // Wait for Live2D module to load (or fail)
     await live2dReady;
@@ -156,6 +168,8 @@ async function init() {
     // Apply saved background
     document.documentElement.style.setProperty('--bg', settings.bgColor);
     bgColorInp.value = settings.bgColor;
+    populateProfileOptions();
+    profileInp.value = getActiveProfile().id;
 
     // Settings form
     endpointInp.value = settings.endpoint;
@@ -460,9 +474,12 @@ function handleSaveSettings() {
   const newEndpoint = endpointInp.value.trim() || settings.endpoint;
   const newToken = tokenInp.value.trim();
   const newBg = bgColorInp.value || settings.bgColor;
+  const newProfileId = profileInp.value;
+  const activeProfileId = getActiveProfile().id;
 
   try {
-    saveSettings({ endpoint: newEndpoint, bgColor: newBg });
+    setActiveProfile(newProfileId);
+    saveSettings({ endpoint: newEndpoint, bgColor: newBg, profileId: newProfileId });
   } catch (err) {
     setStatus('error', err.message);
     return;
@@ -473,7 +490,22 @@ function handleSaveSettings() {
   if (setBackgroundColor) setBackgroundColor(newBg);
 
   settingsOverlay.classList.remove('open');
+  if (newProfileId !== activeProfileId) {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('profile');
+    window.location.assign(url);
+    return;
+  }
   setStatus('connected', 'Settings saved (token is kept only for this session)');
+}
+
+function populateProfileOptions() {
+  profileInp.replaceChildren(...listProfiles().map((profile) => {
+    const option = document.createElement('option');
+    option.value = profile.id;
+    option.textContent = profile.displayName;
+    return option;
+  }));
 }
 
 function enableChat() {

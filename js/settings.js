@@ -16,6 +16,7 @@ const DEFAULTS = {
   token: '',
   bgColor: '#1a1a2e',
   bgImage: '',
+  profileId: 'jellyfish-girl-v1',
 };
 
 /* ── Settings (localStorage) ──────────────────────────── */
