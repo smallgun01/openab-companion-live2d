@@ -26,6 +26,8 @@ test.afterEach(() => setActiveProfile(DEFAULT_PROFILE_ID));
 test('JellyFish Girl profile is structurally valid', () => {
   assert.deepEqual(validateProfile(JELLYFISH_GIRL_PROFILE), { valid: true, errors: [] });
   assert.equal(JELLYFISH_GIRL_PROFILE.assets.model, 'models/jellyfish-girl/jellyfishgirl.model3.json');
+  assert.equal(setActiveProfile(DEFAULT_PROFILE_ID), JELLYFISH_GIRL_PROFILE);
+  assert.equal(supportsCapability('motions'), false);
 });
 
 test('profile selection is registry-backed and rejects unknown IDs', () => {
