@@ -17,7 +17,7 @@ import {
   EMOTION_MAP,
   NEUTRAL_BASELINE,
 } from '../profiles/live2d/jellyfish-girl/expression-profile.js';
-import { blinkAperture, resetBlinkState } from '../js/live2d-anim.js';
+import { blinkAperture, resetBlinkState, shouldApplyParameterIdle } from '../js/live2d-anim.js';
 import { getProfile } from '../profiles/live2d/registry.js';
 import { SHIZUKU_PROFILE } from '../profiles/live2d/shizuku/model-profile.js';
 
@@ -43,6 +43,7 @@ test('Shizuku profile is independently valid with an explicit neutral-only downg
   assert.equal(getActiveExpressionProfile().catalog.neutral.static.PARAM_MOUTH_OPEN_Y, 0);
   assert.deepEqual(SHIZUKU_PROFILE.capabilities.expressions, ['neutral']);
   assert.equal(SHIZUKU_PROFILE.capabilities.motions, true);
+  assert.equal(supportsCapability('motions'), true);
   assert.equal(SHIZUKU_PROFILE.capabilities.lipSync, false);
   assert.deepEqual(SHIZUKU_PROFILE.nativeMotions.idle, { group: 'Idle', index: 0, loop: true });
   assert.equal(resolveSupportedExpression('joy'), 'neutral');
@@ -51,11 +52,19 @@ test('Shizuku profile is independently valid with an explicit neutral-only downg
 });
 
 test('native motion declarations reject malformed engine references', () => {
-  const profile = structuredClone(SHIZUKU_PROFILE);
-  profile.nativeMotions.idle.index = -1;
-  const report = validateProfile(profile);
-  assert.equal(report.valid, false);
-  assert.match(report.errors.at(-1), /nativeMotions\.idle/);
+  const cases = [
+    ['missing group', (motion) => { motion.group = ''; }, /requires a motion group/],
+    ['negative index', (motion) => { motion.index = -1; }, /non-negative integer index/],
+    ['fractional index', (motion) => { motion.index = 0.5; }, /non-negative integer index/],
+    ['missing loop policy', (motion) => { delete motion.loop; }, /boolean loop policy/],
+  ];
+  for (const [, mutate, expected] of cases) {
+    const profile = structuredClone(SHIZUKU_PROFILE);
+    mutate(profile.nativeMotions.idle);
+    const report = validateProfile(profile);
+    assert.equal(report.valid, false);
+    assert.ok(report.errors.some((error) => expected.test(error)));
+  }
 });
 
 test('capability declarations must match the profile-owned expression catalog', () => {
@@ -94,6 +103,12 @@ test('blink preserves the active expression aperture instead of reopening to neu
   assert.equal(blinkAperture(0.55, 1, 'closing'), 0);
   assert.equal(blinkAperture(0.55, 1, 'opening'), 0.55);
   assert.equal(blinkAperture(0.8, 1, 'opening'), 0.8);
+});
+
+test('parameter idle yields to native motion and expression-owned parameters', () => {
+  assert.equal(shouldApplyParameterIdle(false, false), false);
+  assert.equal(shouldApplyParameterIdle(true, true), false);
+  assert.equal(shouldApplyParameterIdle(true, false), true);
 });
 
 test('an interrupted blink resets its state while restoring the expression aperture', () => {

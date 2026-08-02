@@ -125,8 +125,17 @@ async function init() {
         await animReady;
         // Native model motion is opt-in profile data. The adapter does not
         // infer that a model folder's motion files should autoplay.
-        const nativeIdleStarted = getActiveProfile().capabilities.motions
-          && await playNativeMotion?.('idle');
+        let nativeIdleStarted = false;
+        if (getActiveProfile().capabilities.motions) {
+          if (typeof playNativeMotion !== 'function') {
+            console.warn('[main] Native motion adapter unavailable; using parameter idle');
+          } else {
+            nativeIdleStarted = await playNativeMotion('idle');
+            if (!nativeIdleStarted) {
+              console.warn('[main] Native idle did not start; using parameter idle');
+            }
+          }
+        }
         if (startIdleAnimations) startIdleAnimations({ parameterIdle: !nativeIdleStarted });
       } else {
         modelPrompt.classList.remove('hidden');

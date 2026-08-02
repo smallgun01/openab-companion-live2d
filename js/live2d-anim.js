@@ -32,7 +32,9 @@ const HEAD_SWAY_AMPLITUDE = 3.0;  // degrees
 let idleRAF = null;
 let idleStartTime = 0;
 let idleActive = false;
-let parameterIdleActive = true;
+// Only meaningful while idleActive is true; startIdleAnimations sets it from
+// the selected profile's native-motion result.
+let parameterIdleActive = false;
 
 // Blink state machine
 let blinkTimer = null;
@@ -74,7 +76,7 @@ export function startIdleAnimations({ parameterIdle = true } = {}) {
  */
 export function stopIdleAnimations() {
   idleActive = false;
-  parameterIdleActive = true;
+  parameterIdleActive = false;
 
   if (idleRAF) {
     cancelAnimationFrame(idleRAF);
@@ -140,19 +142,19 @@ function tick(now) {
   const breath = requireBinding('idle.breath');
   const bodySway = requireBinding('idle.bodySway');
   const headSway = requireBinding('idle.headSway');
-  if (parameterIdleActive && !exprKeys.has(breath.id)) {
+  if (shouldApplyParameterIdle(parameterIdleActive, exprKeys.has(breath.id))) {
     const breathPhase = (elapsed % BREATH_CYCLE_S) / BREATH_CYCLE_S;
     setParameter(breath.id, 0.5 + Math.sin(breathPhase * Math.PI * 2) * BREATH_AMPLITUDE * 0.5);
   }
 
   // ── Body sway (yields to expression) ──
-  if (parameterIdleActive && !exprKeys.has(bodySway.id)) {
+  if (shouldApplyParameterIdle(parameterIdleActive, exprKeys.has(bodySway.id))) {
     const swayPhase = (elapsed % SWAY_PERIOD_S) / SWAY_PERIOD_S;
     setParameter(bodySway.id, Math.sin(swayPhase * Math.PI * 2) * SWAY_AMPLITUDE);
   }
 
   // ── Head sway (yields to expression) ──
-  if (parameterIdleActive && !exprKeys.has(headSway.id)) {
+  if (shouldApplyParameterIdle(parameterIdleActive, exprKeys.has(headSway.id))) {
     const headPhase = (elapsed % HEAD_SWAY_PERIOD_S) / HEAD_SWAY_PERIOD_S;
     setParameter(headSway.id, Math.sin(headPhase * Math.PI * 2) * HEAD_SWAY_AMPLITUDE);
   }
@@ -167,6 +169,11 @@ function tick(now) {
   tickBlink(now);
 
   idleRAF = requestAnimationFrame(tick);
+}
+
+/** Pure ownership rule: native motion and expressions take priority over idle parameters. */
+export function shouldApplyParameterIdle(parameterIdleEnabled, expressionOwnsParameter) {
+  return parameterIdleEnabled && !expressionOwnsParameter;
 }
 
 // ── Blink state machine ────────────────────────────────

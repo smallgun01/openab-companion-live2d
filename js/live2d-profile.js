@@ -83,9 +83,11 @@ export function validateProfile(profile = activeProfile) {
     }
   }
   for (const [name, motion] of Object.entries(profile?.nativeMotions || {})) {
-    if (!motion?.group || !Number.isInteger(motion.index) || motion.index < 0) {
-      errors.push(`nativeMotions.${name} requires a motion group and non-negative index`);
+    if (!motion?.group) errors.push(`nativeMotions.${name} requires a motion group`);
+    if (!Number.isInteger(motion?.index) || motion.index < 0) {
+      errors.push(`nativeMotions.${name} requires a non-negative integer index`);
     }
+    if (typeof motion?.loop !== 'boolean') errors.push(`nativeMotions.${name} requires a boolean loop policy`);
   }
   for (const [name, binding] of Object.entries(profile?.bindings || {})) {
     if (!binding?.id) errors.push(`${name}: Cubism parameter id is required`);
