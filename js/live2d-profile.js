@@ -88,6 +88,32 @@ export function validateProfile(profile = activeProfile) {
       errors.push(`nativeMotions.${name} requires a non-negative integer index`);
     }
     if (typeof motion?.loop !== 'boolean') errors.push(`nativeMotions.${name} requires a boolean loop policy`);
+    if ('autoplay' in motion && typeof motion.autoplay !== 'boolean') {
+      errors.push(`nativeMotions.${name} autoplay must be a boolean when declared`);
+    }
+  }
+  if ('parameter' in (profile?.idle || {}) && typeof profile.idle.parameter !== 'boolean') {
+    errors.push('idle.parameter must be a boolean when declared');
+  }
+  if ('partOpacity' in (profile?.idle || {})) {
+    if (!profile.idle.partOpacity || typeof profile.idle.partOpacity !== 'object' || Array.isArray(profile.idle.partOpacity)) {
+      errors.push('idle.partOpacity must be an object when declared');
+    } else {
+      for (const [partId, opacity] of Object.entries(profile.idle.partOpacity)) {
+        if (!partId || typeof opacity !== 'number' || opacity < 0 || opacity > 1) {
+          errors.push('idle.partOpacity entries require a non-empty part ID and opacity from 0 to 1');
+        }
+      }
+    }
+  }
+  if ('idleMotionGroup' in (profile?.engineOptions || {})
+    && (typeof profile.engineOptions.idleMotionGroup !== 'string' || !profile.engineOptions.idleMotionGroup)) {
+    errors.push('engineOptions.idleMotionGroup must be a non-empty string when declared');
+  }
+  if ('breathDepth' in (profile?.engineOptions || {})
+    && (typeof profile.engineOptions.breathDepth !== 'number'
+      || profile.engineOptions.breathDepth < 0 || profile.engineOptions.breathDepth > 1)) {
+    errors.push('engineOptions.breathDepth must be a number from 0 to 1 when declared');
   }
   for (const [name, binding] of Object.entries(profile?.bindings || {})) {
     if (!binding?.id) errors.push(`${name}: Cubism parameter id is required`);

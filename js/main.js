@@ -13,7 +13,7 @@ import { retryExhaustedMessage } from './retry-policy.js';
 import { DEFAULT_PROFILE_ID, getActiveProfile, listProfiles, setActiveProfile } from './live2d-profile.js';
 
 // Dynamic imports — Live2D module may fail (SDK not set up); chat always works
-let initScene, setParameter, setBackgroundColor, hasParameters, getModel, dispose, getLastInitError, playNativeMotion;
+let initScene, setParameter, setPartOpacityOverrides, setBackgroundColor, hasParameters, getModel, dispose, getLastInitError, playNativeMotion, stopNativeMotions;
 let live2dAvailable = false;
 let live2dErrorMsg = '';
 
@@ -22,12 +22,14 @@ const live2dReady = (async () => {
     const mod = await import('./live2d-scene.js');
     initScene = mod.initScene;
     setParameter = mod.setParameter;
+    setPartOpacityOverrides = mod.setPartOpacityOverrides;
     setBackgroundColor = mod.setBackgroundColor;
     hasParameters = mod.hasParameters;
     getModel = mod.getModel;
     dispose = mod.dispose;
     getLastInitError = mod.getLastInitError;
     playNativeMotion = mod.playNativeMotion;
+    stopNativeMotions = mod.stopNativeMotions;
     live2dAvailable = true;
   } catch (err) {
     live2dErrorMsg = err.message || String(err);
@@ -138,7 +140,8 @@ async function init() {
         // Native model motion is opt-in profile data. The adapter does not
         // infer that a model folder's motion files should autoplay.
         let nativeIdleStarted = false;
-        if (getActiveProfile().capabilities.motions) {
+        const nativeIdle = getActiveProfile().nativeMotions?.idle;
+        if (getActiveProfile().capabilities.motions && nativeIdle?.autoplay === true) {
           if (typeof playNativeMotion !== 'function') {
             console.warn('[main] Native motion adapter unavailable; using parameter idle');
           } else {
@@ -147,8 +150,24 @@ async function init() {
               console.warn('[main] Native idle did not start; using parameter idle');
             }
           }
+        } else if (nativeIdle) {
+          console.info('[main] Native idle autoplay disabled by active profile; applying profile idle policy');
+          // Some runtimes may retain a model-declared default motion after
+          // loading. The profile's no-autoplay policy is a hard boundary.
+          stopNativeMotions?.();
         }
-        if (startIdleAnimations) startIdleAnimations({ parameterIdle: !nativeIdleStarted });
+        // A profile's neutral baseline is its initial rest pose too, not
+        // merely the fallback after a response. Apply it before idle starts
+        // so model-specific layout parameters (such as Shizuku's hands) take
+        // effect on the first rendered frame.
+        applyExpression('neutral');
+        // Pose groups are profile-owned alternate artwork, not Cubism
+        // parameters. Shizuku selects the non-obscuring arm variants here.
+        setPartOpacityOverrides?.(getActiveProfile().idle?.partOpacity);
+        const parameterIdleEnabled = getActiveProfile().idle?.parameter !== false;
+        if (startIdleAnimations) {
+          startIdleAnimations({ parameterIdle: !nativeIdleStarted && parameterIdleEnabled });
+        }
       } else {
         modelPrompt.classList.remove('hidden');
         const p = modelPrompt.querySelector('p');

@@ -40,6 +40,8 @@ let bgSprite = null;
 /** @type {object} — the Live2D model instance */
 let live2dModel = null;
 const parameterIdCache = new Map();
+const partIdCache = new Map();
+let partOpacityOverrides = {};
 
 /** @type {boolean} — model fully loaded */
 let modelReady = false;
@@ -59,6 +61,7 @@ function wait(ms) {
  */
 async function loadModelWithRetry(modelPath) {
   let lastError;
+  const engineOptions = getActiveProfile().engineOptions || {};
 
   for (let attempt = 1; attempt <= MODEL_LOAD_ATTEMPTS; attempt += 1) {
     try {
@@ -66,6 +69,7 @@ async function loadModelWithRetry(modelPath) {
         autoUpdate: true,
         autoHitTest: false,
         autoFocus: false,
+        ...engineOptions,
       });
     } catch (error) {
       lastError = error;
@@ -191,6 +195,10 @@ export async function initScene(canvasEl, opts = {}) {
     live2dModel = await loadModelWithRetry(modelPath);
 
     app.stage.addChild(live2dModel);
+    // Cubism Pose updates part opacities during the model tick. Register this
+    // after the auto-updating model so profile-owned rest-pose alternatives
+    // are re-applied for the frame that is actually rendered.
+    app.ticker.add(applyPartOpacityOverrides);
 
     // Position (bottom-center anchor, responsive)
     _relayout();
@@ -236,6 +244,35 @@ export function setParameter(name, value) {
   } catch(e) { console.warn('[setParameter]', name, 'error:', e.message); }
 }
 
+/** Set a Cubism part's opacity by its profile-owned part ID. */
+export function setPartOpacity(name, value) {
+  if (!live2dModel?.internalModel) return;
+  try {
+    const model = live2dModel.internalModel.coreModel;
+    if (!model?.setPartOpacityById) {
+      console.warn('[setPartOpacity] coreModel missing setPartOpacityById');
+      return;
+    }
+    const idHandle = getPartId(name);
+    if (idHandle) model.setPartOpacityById(idHandle, value);
+    else console.warn('[setPartOpacity] unknown part:', name);
+  } catch (error) {
+    console.warn('[setPartOpacity]', name, 'error:', error.message);
+  }
+}
+
+/** Keep profile-declared pose-part opacity overrides authoritative per frame. */
+export function setPartOpacityOverrides(overrides = {}) {
+  partOpacityOverrides = { ...overrides };
+  applyPartOpacityOverrides();
+}
+
+function applyPartOpacityOverrides() {
+  for (const [partId, opacity] of Object.entries(partOpacityOverrides)) {
+    setPartOpacity(partId, opacity);
+  }
+}
+
 /**
  * Get a Live2D parameter value by ID.
  *
@@ -263,6 +300,13 @@ function getParameterId(name) {
   const idHandle = idManager.getId(name);
   // A failed lookup can become valid after model initialization; do not negative-cache it.
   if (idHandle) parameterIdCache.set(name, idHandle);
+  return idHandle;
+}
+
+function getPartId(name) {
+  if (partIdCache.has(name)) return partIdCache.get(name);
+  const idHandle = PIXI.live2d.CubismFramework.getIdManager().getId(name);
+  if (idHandle) partIdCache.set(name, idHandle);
   return idHandle;
 }
 

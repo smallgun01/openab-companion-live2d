@@ -19,7 +19,7 @@ test('development profile selection completes the JellyFish Girl → Shizuku →
   assert.equal(profileId, 'shizuku-v1');
   assert.equal(setActiveProfile(profileId).id, 'shizuku-v1');
   assert.equal(getActiveProfile().id, 'shizuku-v1');
-  assert.equal(resolveSupportedExpression('joy'), 'neutral');
+  assert.equal(resolveSupportedExpression('joy'), 'joy');
 
   setActiveProfile(DEFAULT_PROFILE_ID);
   assert.equal(getActiveProfile().id, DEFAULT_PROFILE_ID);

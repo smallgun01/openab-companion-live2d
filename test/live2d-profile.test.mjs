@@ -39,16 +39,47 @@ test('profile selection is registry-backed and rejects unknown IDs', () => {
   assert.equal(getActiveProfile(), JELLYFISH_GIRL_PROFILE);
 });
 
-test('Shizuku profile is independently valid with an explicit neutral-only downgrade', () => {
+test('Shizuku profile exposes its candidate semantic catalog for visual calibration', () => {
   assert.deepEqual(validateProfile(SHIZUKU_PROFILE), { valid: true, errors: [] });
   assert.equal(setActiveProfile(SHIZUKU_PROFILE.id), SHIZUKU_PROFILE);
-  assert.equal(getActiveExpressionProfile().catalog.neutral.static.PARAM_MOUTH_OPEN_Y, 0);
-  assert.deepEqual(SHIZUKU_PROFILE.capabilities.expressions, ['neutral']);
+  assert.equal(getActiveExpressionProfile().baseline.PARAM_MOUTH_OPEN_Y, 0);
+  assert.deepEqual({
+    primaryRightArm: getActiveExpressionProfile().baseline.PARAM_ARM_R,
+    leftArm: getActiveExpressionProfile().baseline.PARAM_ARM_02_L_01,
+    forearm: getActiveExpressionProfile().baseline.PARAM_ARM_02_L_02,
+    leftHand: getActiveExpressionProfile().baseline.PARAM_HAND_02_L,
+    rightArm: getActiveExpressionProfile().baseline.PARAM_ARM_02_R_01,
+    rightForearm: getActiveExpressionProfile().baseline.PARAM_ARM_02_R_02,
+    rightHand: getActiveExpressionProfile().baseline.PARAM_HAND_02_R,
+  }, {
+    primaryRightArm: -1,
+    leftArm: -0.25,
+    forearm: -1,
+    leftHand: -1,
+    rightArm: -1,
+    rightForearm: -1,
+    rightHand: -1,
+  });
+  assert.deepEqual(SHIZUKU_PROFILE.capabilities.expressions, [
+    'neutral', 'joy', 'sadness', 'anger', 'surprise', 'fear', 'disgust', 'smirk', 'thinking',
+  ]);
   assert.equal(SHIZUKU_PROFILE.capabilities.motions, true);
   assert.equal(supportsCapability('motions'), true);
   assert.equal(SHIZUKU_PROFILE.capabilities.lipSync, false);
-  assert.deepEqual(SHIZUKU_PROFILE.nativeMotions.idle, { group: 'Idle', index: 0, loop: true });
-  assert.equal(resolveSupportedExpression('joy'), 'neutral');
+  assert.equal(SHIZUKU_PROFILE.idle.parameter, false);
+  assert.deepEqual(SHIZUKU_PROFILE.idle.partOpacity, {
+    PARTS_01_ARM_R_02: 1,
+    PARTS_01_ARM_R_01: 0,
+    PARTS_01_ARM_L_02: 1,
+    PARTS_01_ARM_L_01: 0,
+  });
+  assert.deepEqual(SHIZUKU_PROFILE.engineOptions, {
+    idleMotionGroup: '__companion_idle_disabled__', breathDepth: 0,
+  });
+  assert.deepEqual(SHIZUKU_PROFILE.nativeMotions.idle, {
+    group: 'Idle', index: 0, loop: true, autoplay: false,
+  });
+  assert.equal(resolveSupportedExpression('joy'), 'joy');
   assert.equal(resolveSupportedExpression('neutral'), 'neutral');
   assert.equal(supportsCapability('lipSync'), false);
 });
@@ -59,6 +90,7 @@ test('native motion declarations reject malformed engine references', () => {
     ['negative index', (motion) => { motion.index = -1; }, /non-negative integer index/],
     ['fractional index', (motion) => { motion.index = 0.5; }, /non-negative integer index/],
     ['missing loop policy', (motion) => { delete motion.loop; }, /boolean loop policy/],
+    ['invalid autoplay policy', (motion) => { motion.autoplay = 'never'; }, /autoplay must be a boolean/],
   ];
   for (const [, mutate, expected] of cases) {
     const profile = structuredClone(SHIZUKU_PROFILE);
@@ -71,10 +103,36 @@ test('native motion declarations reject malformed engine references', () => {
 
 test('capability declarations must match the profile-owned expression catalog', () => {
   const profile = structuredClone(SHIZUKU_PROFILE);
-  profile.capabilities.expressions = ['neutral', 'joy'];
+  profile.capabilities.expressions = ['neutral', 'not-a-catalog-entry'];
   const report = validateProfile(profile);
   assert.equal(report.valid, false);
-  assert.match(report.errors.at(-1), /declares missing catalog entry: joy/);
+  assert.match(report.errors.at(-1), /declares missing catalog entry: not-a-catalog-entry/);
+});
+
+test('idle policy rejects a non-boolean parameter setting', () => {
+  const profile = structuredClone(SHIZUKU_PROFILE);
+  profile.idle.parameter = 'paused';
+  const report = validateProfile(profile);
+  assert.equal(report.valid, false);
+  assert.match(report.errors.at(-1), /idle\.parameter must be a boolean/);
+});
+
+test('idle pose opacity declarations reject invalid part values', () => {
+  const profile = structuredClone(SHIZUKU_PROFILE);
+  profile.idle.partOpacity.PARTS_01_ARM_R_01 = 2;
+  const report = validateProfile(profile);
+  assert.equal(report.valid, false);
+  assert.match(report.errors.at(-1), /idle\.partOpacity entries/);
+});
+
+test('engine idle options reject invalid values', () => {
+  const invalidGroup = structuredClone(SHIZUKU_PROFILE);
+  invalidGroup.engineOptions.idleMotionGroup = '';
+  assert.match(validateProfile(invalidGroup).errors.at(-1), /idleMotionGroup must be a non-empty string/);
+
+  const invalidBreath = structuredClone(SHIZUKU_PROFILE);
+  invalidBreath.engineOptions.breathDepth = 1.5;
+  assert.match(validateProfile(invalidBreath).errors.at(-1), /breathDepth must be a number from 0 to 1/);
 });
 
 test('semantic bindings resolve to calibrated Cubism parameters', () => {
