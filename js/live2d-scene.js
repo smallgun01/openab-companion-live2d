@@ -42,6 +42,8 @@ let live2dModel = null;
 const parameterIdCache = new Map();
 const partIdCache = new Map();
 let partOpacityOverrides = {};
+let partOpacityEntries = [];
+let partOpacityTickerRegistered = false;
 
 /** @type {boolean} — model fully loaded */
 let modelReady = false;
@@ -61,15 +63,24 @@ function wait(ms) {
  */
 async function loadModelWithRetry(modelPath) {
   let lastError;
-  const engineOptions = getActiveProfile().engineOptions || {};
+  const profileEngineOptions = getActiveProfile().engineOptions || {};
+  // Profiles may select only engine behaviour this adapter explicitly owns.
+  // Never let declarative model data override lifecycle-critical defaults.
+  const engineOptions = {};
+  if ('idleMotionGroup' in profileEngineOptions) {
+    engineOptions.idleMotionGroup = profileEngineOptions.idleMotionGroup;
+  }
+  if ('breathDepth' in profileEngineOptions) {
+    engineOptions.breathDepth = profileEngineOptions.breathDepth;
+  }
 
   for (let attempt = 1; attempt <= MODEL_LOAD_ATTEMPTS; attempt += 1) {
     try {
       return await PIXI.live2d.Live2DModel.from(modelPath, {
+        ...engineOptions,
         autoUpdate: true,
         autoHitTest: false,
         autoFocus: false,
-        ...engineOptions,
       });
     } catch (error) {
       lastError = error;
@@ -195,11 +206,6 @@ export async function initScene(canvasEl, opts = {}) {
     live2dModel = await loadModelWithRetry(modelPath);
 
     app.stage.addChild(live2dModel);
-    // Cubism Pose updates part opacities during the model tick. Register this
-    // after the auto-updating model so profile-owned rest-pose alternatives
-    // are re-applied for the frame that is actually rendered.
-    app.ticker.add(applyPartOpacityOverrides);
-
     // Position (bottom-center anchor, responsive)
     _relayout();
     window.addEventListener('resize', _onResize);
@@ -264,12 +270,29 @@ export function setPartOpacity(name, value) {
 /** Keep profile-declared pose-part opacity overrides authoritative per frame. */
 export function setPartOpacityOverrides(overrides = {}) {
   partOpacityOverrides = { ...overrides };
+  partOpacityEntries = Object.entries(partOpacityOverrides);
+  syncPartOpacityTicker();
   applyPartOpacityOverrides();
 }
 
 function applyPartOpacityOverrides() {
-  for (const [partId, opacity] of Object.entries(partOpacityOverrides)) {
+  if (partOpacityEntries.length === 0) return;
+  for (const [partId, opacity] of partOpacityEntries) {
     setPartOpacity(partId, opacity);
+  }
+}
+
+/** Register the hot-path override only for profiles that actually use it. */
+function syncPartOpacityTicker() {
+  if (!app?.ticker) return;
+  if (partOpacityEntries.length > 0 && !partOpacityTickerRegistered) {
+    // Register after the auto-updating model so Cubism Pose cannot overwrite
+    // the profile-owned rest composition in the rendered frame.
+    app.ticker.add(applyPartOpacityOverrides);
+    partOpacityTickerRegistered = true;
+  } else if (partOpacityEntries.length === 0 && partOpacityTickerRegistered) {
+    app.ticker.remove(applyPartOpacityOverrides);
+    partOpacityTickerRegistered = false;
   }
 }
 
@@ -411,6 +434,12 @@ export async function setBackgroundImage(url) {
 
 export function dispose() {
   window.removeEventListener('resize', _onResize);
+  if (app && partOpacityTickerRegistered) {
+    app.ticker.remove(applyPartOpacityOverrides);
+  }
+  partOpacityTickerRegistered = false;
+  partOpacityOverrides = {};
+  partOpacityEntries = [];
   if (live2dModel) {
     stopNativeMotions();
     try { live2dModel.destroy({ texture: true }); } catch {}
@@ -426,5 +455,6 @@ export function dispose() {
   }
   modelReady = false;
   parameterIdCache.clear();
+  partIdCache.clear();
   console.log('[live2d-scene] disposed');
 }

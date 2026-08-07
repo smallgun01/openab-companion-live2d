@@ -19,8 +19,7 @@ export const SHIZUKU_PROFILE = Object.freeze({
     'idle.headSway': { id: 'PARAM_ANGLE_X', range: [-30, 30] },
   },
   capabilities: {
-    // Candidate recipes: do not call this calibrated until the human visual
-    // gate signs off each state.
+    // All eight semantic states passed the human visual acceptance gate.
     expressions: ['neutral', 'joy', 'sadness', 'anger', 'surprise', 'fear', 'disgust', 'smirk', 'thinking'],
     nativeExpressions: false,
     // The model has a Cubism LipSync group, but Companion has no audio

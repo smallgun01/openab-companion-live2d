@@ -70,6 +70,7 @@ export function requireBinding(name) {
  */
 export function validateProfile(profile = activeProfile) {
   const errors = [];
+  const allowedEngineOptions = new Set(['idleMotionGroup', 'breathDepth']);
   if (!profile || profile.schemaVersion !== 1) errors.push('schemaVersion must be 1');
   if (!profile?.id) errors.push('profile id is required');
   if (!profile?.assets?.model) errors.push('assets.model is required');
@@ -114,6 +115,9 @@ export function validateProfile(profile = activeProfile) {
     && (typeof profile.engineOptions.breathDepth !== 'number'
       || profile.engineOptions.breathDepth < 0 || profile.engineOptions.breathDepth > 1)) {
     errors.push('engineOptions.breathDepth must be a number from 0 to 1 when declared');
+  }
+  for (const key of Object.keys(profile?.engineOptions || {})) {
+    if (!allowedEngineOptions.has(key)) errors.push(`engineOptions.${key} is not supported by this adapter`);
   }
   for (const [name, binding] of Object.entries(profile?.bindings || {})) {
     if (!binding?.id) errors.push(`${name}: Cubism parameter id is required`);

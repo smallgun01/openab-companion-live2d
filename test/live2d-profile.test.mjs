@@ -133,6 +133,10 @@ test('engine idle options reject invalid values', () => {
   const invalidBreath = structuredClone(SHIZUKU_PROFILE);
   invalidBreath.engineOptions.breathDepth = 1.5;
   assert.match(validateProfile(invalidBreath).errors.at(-1), /breathDepth must be a number from 0 to 1/);
+
+  const unknownOption = structuredClone(SHIZUKU_PROFILE);
+  unknownOption.engineOptions.autoUpdate = false;
+  assert.match(validateProfile(unknownOption).errors.at(-1), /autoUpdate is not supported by this adapter/);
 });
 
 test('semantic bindings resolve to calibrated Cubism parameters', () => {
